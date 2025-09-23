@@ -152,8 +152,8 @@ class Slideshow:
                 "-c:a", "aac",      # Re-encode audio with AAC
                 "-map", "0:v",      # Use video from first input (concat)
                 "-map", "1:a",      # Use audio from second input (soundtrack)
-                "-shortest",        # End output when shortest input ends (video duration)
-                "-af", "afade=in:st=0:d=1,afade=out:st=" + str(total_duration - 1) + ":d=1",  # Fade in/out
+                "-t", str(total_duration),  # Set exact output duration to match video
+                "-af", f"afade=in:st=0:d=1,afade=out:st={total_duration-1}:d=1",  # Fade in/out with proper timing
                 "-preset", "fast",  # Fast encoding preset
                 "-movflags", "+faststart",  # Optimize for streaming/QuickTime
                 "-progress", "pipe:1",  # Send progress to stdout
