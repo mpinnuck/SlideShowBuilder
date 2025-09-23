@@ -424,14 +424,91 @@ class OrigamiTransition(BaseTransition):
         Returns:
             List of rendered animation frames
         """
-        # TODO: Implement 3D rendering
-        # - Create OpenGL context
-        # - Set up 3D scene with paper surfaces
-        # - Apply textures from input frames
-        # - Animate folding transformation
-        # - Add physics-based swinging motion
-        # - Render to frame sequence
-        raise NotImplementedError("3D animation generation not yet implemented")
+        if not OPENGL_AVAILABLE:
+            raise RuntimeError("OpenGL dependencies not available")
+        
+        # Get frame information
+        from_frames = frame_sequences['from_frames']
+        to_frames = frame_sequences['to_frames']
+        working_dir = frame_sequences['working_dir']
+        frame_rate = frame_sequences['frame_rate']
+        resolution = frame_sequences['resolution']
+        
+        if not from_frames or not to_frames:
+            raise RuntimeError("No frames extracted for animation")
+        
+        # Calculate animation parameters
+        total_frames = int(self.duration * frame_rate)
+        fold_frames = int(self.fold_end_time * frame_rate)
+        swing_frames = total_frames - fold_frames
+        
+        print(f"Generating {total_frames} frames at {frame_rate}fps")
+        print(f"Fold phase: {fold_frames} frames, Swing phase: {swing_frames} frames")
+        
+        # Create OpenGL context
+        width, height = resolution
+        try:
+            ctx = self._create_opengl_context(width, height)
+        except Exception as e:
+            raise RuntimeError(f"Failed to create OpenGL context: {e}")
+        
+        animation_frames = []
+        output_frames_dir = working_dir / "animation_output"
+        output_frames_dir.mkdir(exist_ok=True)
+        
+        try:
+            # Create paper geometry
+            vertices, indices, tex_coords = self._create_paper_geometry(width, height)
+            
+            # Load input frame textures
+            from_texture = self._load_texture(ctx, from_frames[0])
+            to_texture = self._load_texture(ctx, to_frames[0])
+            
+            # Create shader program for 3D rendering
+            program = self._create_shader_program(ctx)
+            
+            # Create vertex array and buffers
+            vao = ctx.vertex_array(program, [
+                ctx.buffer(vertices).bind('in_position', '3f'),
+                ctx.buffer(tex_coords).bind('in_texcoord', '2f')
+            ], ctx.buffer(indices))
+            
+            # Render each frame of the animation
+            for frame_idx in range(total_frames):
+                frame_progress = frame_idx / max(total_frames - 1, 1)
+                
+                # Calculate fold progress with physics
+                if frame_idx <= fold_frames:
+                    fold_progress = frame_idx / max(fold_frames, 1)
+                else:
+                    # Add swinging motion
+                    base_progress = 1.0
+                    swing_time = (frame_idx - fold_frames) / max(swing_frames, 1)
+                    fold_progress = self._add_physics_swing(base_progress + swing_time, 0.1)
+                
+                # Render frame
+                frame_data = self._render_frame(ctx, program, vao, from_texture, to_texture, 
+                                              fold_progress, frame_progress, resolution)
+                
+                # Save frame
+                frame_path = output_frames_dir / f"frame_{frame_idx:04d}.png"
+                self._save_frame(frame_data, frame_path, resolution)
+                animation_frames.append(frame_path)
+                
+                if frame_idx % 10 == 0:  # Progress update every 10 frames
+                    print(f"Rendered frame {frame_idx}/{total_frames}")
+            
+            print(f"3D animation generation complete: {len(animation_frames)} frames")
+            return animation_frames
+            
+        except Exception as e:
+            raise RuntimeError(f"3D animation generation failed: {e}")
+        finally:
+            # Clean up OpenGL resources
+            try:
+                ctx.release()
+            except:
+                pass
     
     def _compose_video(self, animation_frames: list, output_path: Path):
         """

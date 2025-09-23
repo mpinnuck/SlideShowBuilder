@@ -158,17 +158,6 @@ class GUI(tk.Tk):
         self.progress['value'] = 0
         self.update_idletasks()
 
-    def update_progress(self, value, maximum=100):
-        """Update progress bar with current value"""
-        self.progress['maximum'] = maximum
-        self.progress['value'] = value
-        self.update_idletasks()  # Force GUI update
-
-    def reset_progress(self):
-        """Reset progress bar to 0"""
-        self.progress['value'] = 0
-        self.update_idletasks()
-
     def select_input_folder(self):
         folder = filedialog.askdirectory()
         if folder:
