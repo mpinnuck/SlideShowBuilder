@@ -54,6 +54,24 @@ class Slideshow:
             if progress_callback:
                 progress_callback(0, 1, error_msg)
             raise
+        
+        # Get soundtrack path if specified
+        soundtrack_path = self.config.get("soundtrack", "")
+        has_soundtrack = soundtrack_path and Path(soundtrack_path).exists()
+        
+        if has_soundtrack:
+            if progress_callback:
+                progress_callback(0, 1, f"Using soundtrack: {soundtrack_path}")
+            print(f"Soundtrack found: {soundtrack_path}")
+        else:
+            if soundtrack_path:
+                print(f"Warning: Soundtrack file not found: {soundtrack_path}")
+                if progress_callback:
+                    progress_callback(0, 1, f"Warning: Soundtrack file not found: {soundtrack_path}")
+            else:
+                print("No soundtrack specified")
+                if progress_callback:
+                    progress_callback(0, 1, "No soundtrack specified")
         clips = []
         total_items = len(self.items)
         total_transitions = len(self.items) - 1 if len(self.items) > 1 else 0
@@ -122,15 +140,43 @@ class Slideshow:
         
         # Run FFmpeg with progress monitoring
         import re
-        process = subprocess.Popen([
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
-            "-c:v", "libx264",  # Re-encode video with H264
-            "-c:a", "aac",      # Re-encode audio with AAC
-            "-preset", "fast",  # Fast encoding preset
-            "-movflags", "+faststart",  # Optimize for streaming/QuickTime
-            "-progress", "pipe:1",  # Send progress to stdout
-            str(output_path)
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        
+        # Build FFmpeg command based on whether we have a soundtrack
+        if has_soundtrack:
+            # With soundtrack: mix video with audio
+            ffmpeg_cmd = [
+                "ffmpeg", "-y", 
+                "-f", "concat", "-safe", "0", "-i", str(concat_file),  # Video input
+                "-stream_loop", "-1", "-i", str(soundtrack_path),  # Audio input (loop if needed)
+                "-c:v", "libx264",  # Re-encode video with H264
+                "-c:a", "aac",      # Re-encode audio with AAC
+                "-map", "0:v",      # Use video from first input (concat)
+                "-map", "1:a",      # Use audio from second input (soundtrack)
+                "-shortest",        # End output when shortest input ends (video duration)
+                "-af", "afade=in:st=0:d=1,afade=out:st=" + str(total_duration - 1) + ":d=1",  # Fade in/out
+                "-preset", "fast",  # Fast encoding preset
+                "-movflags", "+faststart",  # Optimize for streaming/QuickTime
+                "-progress", "pipe:1",  # Send progress to stdout
+                str(output_path)
+            ]
+            if progress_callback:
+                progress_callback(processing_weight, total_weighted_steps, "Assembling final video with soundtrack...")
+        else:
+            # Without soundtrack: just encode video
+            ffmpeg_cmd = [
+                "ffmpeg", "-y", 
+                "-f", "concat", "-safe", "0", "-i", str(concat_file),
+                "-c:v", "libx264",  # Re-encode video with H264
+                "-c:a", "aac",      # Re-encode audio with AAC
+                "-preset", "fast",  # Fast encoding preset
+                "-movflags", "+faststart",  # Optimize for streaming/QuickTime
+                "-progress", "pipe:1",  # Send progress to stdout
+                str(output_path)
+            ]
+            if progress_callback:
+                progress_callback(processing_weight, total_weighted_steps, "Assembling final video...")
+        
+        process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         
         # Monitor progress
         assembly_progress = 0
