@@ -17,14 +17,8 @@ class SlideshowController:
         """Register a callback for log messages"""
         self.log_callback = log_callback
 
-    def export(self):
-        def progress_handler(current, total, message=None):
-            if self.progress_callback:
-                self.progress_callback(current, total)
-            if message and self.log_callback:
-                self.log_callback(message)
-        
+    def export(self):        
         output_path = Path(self.config["output_folder"]) / f"{self.config['project_name']}.mp4"
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        self.slideshow.render(output_path, progress_handler)
+        self.slideshow.render(output_path, self.progress_callback, self.log_callback)
         return output_path

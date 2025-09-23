@@ -39,35 +39,35 @@ class Slideshow:
                 transition = get_transition("fade", duration=transition_duration)
                 self.transitions.append(transition)
 
-    def render(self, output_path: Path, progress_callback=None):
+    def render(self, output_path: Path, progress_callback=None, log_callback=None):
         # Create working folder in output directory
         working_folder = output_path.parent / "working"
         
         # Check if working folder exists and clean it if it does
         if working_folder.exists():
-            if progress_callback:
-                progress_callback(0, 1, "Cleaning existing working folder...")
+            if log_callback:
+                log_callback("Cleaning existing working folder...")
             print(f"Cleaning existing working folder: {working_folder}")
             try:
                 shutil.rmtree(working_folder)
             except Exception as e:
                 error_msg = f"Failed to clean working folder: {e}"
                 print(error_msg)
-                if progress_callback:
-                    progress_callback(0, 1, error_msg)
+                if log_callback:
+                    log_callback(error_msg)
                 raise
         
         # Create fresh working folder
         try:
             working_folder.mkdir(parents=True, exist_ok=True)
             print(f"Working folder created: {working_folder}")
-            if progress_callback:
-                progress_callback(0, 1, f"Working folder ready: {working_folder}")
+            if log_callback:
+                log_callback(f"Working folder ready: {working_folder}")
         except Exception as e:
             error_msg = f"Failed to create working folder: {e}"
             print(error_msg)
-            if progress_callback:
-                progress_callback(0, 1, error_msg)
+            if log_callback:
+                log_callback(error_msg)
             raise
         
         # Get soundtrack path if specified
@@ -75,18 +75,18 @@ class Slideshow:
         has_soundtrack = soundtrack_path and Path(soundtrack_path).exists()
         
         if has_soundtrack:
-            if progress_callback:
-                progress_callback(0, 1, f"Using soundtrack: {soundtrack_path}")
+            if log_callback:
+                log_callback(f"Using soundtrack: {soundtrack_path}")
             print(f"Soundtrack found: {soundtrack_path}")
         else:
             if soundtrack_path:
                 print(f"Warning: Soundtrack file not found: {soundtrack_path}")
-                if progress_callback:
-                    progress_callback(0, 1, f"Warning: Soundtrack file not found: {soundtrack_path}")
+                if log_callback:
+                    log_callback(f"Warning: Soundtrack file not found: {soundtrack_path}")
             else:
                 print("No soundtrack specified")
-                if progress_callback:
-                    progress_callback(0, 1, "No soundtrack specified")
+                if log_callback:
+                    log_callback("No soundtrack specified")
         clips = []
         total_items = len(self.items)
         total_transitions = len(self.items) - 1 if len(self.items) > 1 else 0
@@ -103,7 +103,9 @@ class Slideshow:
         for i, item in enumerate(self.items):
             if progress_callback:
                 current_progress = i
-                progress_callback(current_progress, total_weighted_steps, f"Processing slide {i+1}/{total_items}")
+                progress_callback(current_progress, total_weighted_steps)
+            if log_callback:
+                log_callback(f"Processing slide {i+1}/{total_items}")
             
             # Calculate duration: reduce by half transition on each side except for first/last
             effective_duration = item.duration
@@ -132,7 +134,9 @@ class Slideshow:
         for i in range(len(clips) - 1):
             if progress_callback:
                 current_progress = total_items + i
-                progress_callback(current_progress, total_weighted_steps, f"Creating transition {i+1}/{total_transitions}")
+                progress_callback(current_progress, total_weighted_steps)
+            if log_callback:
+                log_callback(f"Creating transition {i+1}/{total_transitions}")
             merged.append(clips[i])
             trans_out = working_folder / f"trans_{i:03}.mp4"
             self.transitions[i].render(clips[i], clips[i+1], trans_out)
@@ -146,7 +150,9 @@ class Slideshow:
 
         if progress_callback:
             # Final assembly starts at 50% (processing_weight) and goes to 100%
-            progress_callback(processing_weight, total_weighted_steps, "Assembling final video...")
+            progress_callback(processing_weight, total_weighted_steps)
+        if log_callback:
+            log_callback("Assembling final video...")
 
         # Calculate total duration for progress tracking
         total_duration = sum(item.duration for item in self.items)
@@ -174,8 +180,8 @@ class Slideshow:
                 "-progress", "pipe:1",  # Send progress to stdout
                 str(output_path)
             ]
-            if progress_callback:
-                progress_callback(processing_weight, total_weighted_steps, "Assembling final video with soundtrack...")
+            if log_callback:
+                log_callback("Assembling final video with soundtrack...")
         else:
             # Without soundtrack: just encode video
             ffmpeg_cmd = [
@@ -188,8 +194,8 @@ class Slideshow:
                 "-progress", "pipe:1",  # Send progress to stdout
                 str(output_path)
             ]
-            if progress_callback:
-                progress_callback(processing_weight, total_weighted_steps, "Assembling final video...")
+            if log_callback:
+                log_callback("Assembling final video...")
         
         process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         
@@ -199,7 +205,7 @@ class Slideshow:
             output = process.stdout.readline()
             if output == '' and process.poll() is not None:
                 break
-            if output and progress_callback:
+            if output and (progress_callback or log_callback):
                 # Look for time progress in FFmpeg output
                 time_match = re.search(r'out_time_ms=(\d+)', output)
                 if time_match:
@@ -209,8 +215,10 @@ class Slideshow:
                         assembly_progress = min(time_seconds / total_duration, 1.0)
                         # Map assembly progress (0-1) to final 50% of progress bar
                         current_progress = processing_weight + (assembly_progress * assembly_weight)
-                        progress_callback(int(current_progress), total_weighted_steps, 
-                                        f"Assembling final video... {assembly_progress*100:.1f}%")
+                        if progress_callback:
+                            progress_callback(int(current_progress), total_weighted_steps)
+                        if log_callback:
+                            log_callback(f"Assembling final video... {assembly_progress*100:.1f}%")
         
         # Wait for process to complete
         process.wait()
@@ -219,11 +227,13 @@ class Slideshow:
             raise subprocess.CalledProcessError(process.returncode, "ffmpeg", stderr_output)
         
         if progress_callback:
-            progress_callback(total_weighted_steps, total_weighted_steps, "Video export completed!")
+            progress_callback(total_weighted_steps, total_weighted_steps)
+        if log_callback:
+            log_callback("Video export completed!")
         
         # Clean up working folder
-        if progress_callback:
-            progress_callback(total_items + total_transitions + 1, total_items + total_transitions + 1, "Cleaning working folder...")
+        if log_callback:
+            log_callback("Cleaning working folder...")
         try:
             shutil.rmtree(working_folder)
             print(f"Working folder cleaned: {working_folder}")

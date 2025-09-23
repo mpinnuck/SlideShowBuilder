@@ -201,14 +201,8 @@ Temporary Items
 .apdisk
 
 # Project-specific ignores
-# Output files and working directories
-data/output/*.mp4
-data/output/working/
-media/output/
-
-# Test/sample data directories (not needed in repository)
-data/slides/
-data/soundtracks/
+# Exclude entire data directory and all children
+data/
 
 # Temporary files
 *.tmp
