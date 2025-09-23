@@ -1,0 +1,416 @@
+=== SlideShow Builder - Source Code Consolidation ===
+Generated on: Tue Sep 23 13:38:05 AEST 2025
+
+=== PROJECT STRUCTURE ===
+.
+├── consolidate_source.sh
+├── data
+│   ├── output
+│   ├── slides
+│   │   ├── IMG_3071.JPG
+│   │   ├── IMG_3073.JPG
+│   │   ├── IMG_3075.PNG
+│   │   ├── IMG_3076.PNG
+│   │   ├── IMG_3077.JPG
+│   │   ├── IMG_3078.JPG
+│   │   ├── IMG_3080.JPG
+│   │   ├── IMG_3084.JPG
+│   │   ├── IMG_3085.JPG
+│   │   ├── IMG_3086.MOV
+│   │   ├── IMG_3087.JPG
+│   │   ├── IMG_3088.JPG
+│   │   ├── IMG_3089.JPG
+│   │   ├── IMG_3092.JPG
+│   │   ├── IMG_3095.JPG
+│   │   ├── IMG_3096.JPG
+│   │   ├── IMG_3097.MOV
+│   │   └── IMG_3099.MOV
+│   └── soundtracks
+│       ├── David_Nevue_-_10._Happily_Ever_After_(mp3.pm).mp3
+│       └── G._Love_Special_Sauce_-_City_Livin_Album_Version_Album_Version_(mp3.pm).mp3
+├── media
+│   └── output
+├── README.md
+├── requirements.txt
+├── slideshow
+│   ├── __init__.py
+│   ├── config.py
+│   ├── controller.py
+│   ├── gui.py
+│   ├── slides
+│   │   ├── __init__.py
+│   │   ├── photo_slide.py
+│   │   ├── slide_item.py
+│   │   └── video_slide.py
+│   ├── slideshowmodel.py
+│   └── transitions
+│       ├── __init__.py
+│       └── fade_transition.py
+├── slideshow_config.json
+├── slideshow.txt
+└── slideshowbuilder.py
+
+10 directories, 37 files
+
+=================================
+
+=== FILE: slideshow/__init__.py ===
+
+
+=== END OF slideshow/__init__.py ===
+
+
+=== FILE: slideshow/config.py ===
+
+import json
+from pathlib import Path
+
+DEFAULT_CONFIG = {
+    "project_name": "MyProject",
+    "input_folder": "media/input",
+    "output_folder": "media/output",
+    "photo_duration": 3.0,
+    "video_duration": 5.0,
+    "transition_duration": 1.0,
+    "transition_type": "fade",
+    "fps": 30,
+    "resolution": [640, 360]
+}
+
+CONFIG_FILE = Path("slideshow_config.json")
+
+def load_config(path: Path = CONFIG_FILE) -> dict:
+    if not path.exists():
+        return DEFAULT_CONFIG.copy()
+    with open(path, "r") as f:
+        return json.load(f)
+
+def save_config(config: dict, path: Path = CONFIG_FILE):
+    with open(path, "w") as f:
+        json.dump(config, f, indent=2)
+
+=== END OF slideshow/config.py ===
+
+
+=== FILE: slideshow/controller.py ===
+
+from slideshow.config import load_config
+from slideshow.slideshowmodel import Slideshow
+from pathlib import Path
+
+class SlideshowController:
+    def __init__(self):
+        self.config = load_config()
+        self.slideshow = Slideshow(self.config)
+
+    def export(self):
+        output_path = Path(self.config["output_folder"]) / f"{self.config['project_name']}.mp4"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        self.slideshow.render(output_path)
+        return output_path
+
+=== END OF slideshow/controller.py ===
+
+
+=== FILE: slideshow/gui.py ===
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from slideshow.config import load_config, save_config
+
+class GUI(tk.Tk):
+    def __init__(self, controller):
+        super().__init__()
+        self.title("Slideshow Builder v1")
+        self.controller = controller
+        self.config_data = load_config()
+        self.create_widgets()
+        self.center_window()
+    
+    def center_window(self):
+            self.update_idletasks()
+            w = self.winfo_width()
+            h = self.winfo_height()
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            x = (sw // 2) - (w // 2)
+            y = (sh // 2) - (h // 2)
+            self.geometry(f"{w}x{h}+{x}+{y}")
+            self.minsize(600, 400)
+
+    def create_widgets(self):
+        # Project Info
+        ttk.Label(self, text="Project Name:").grid(row=0, column=0, sticky="e")
+        self.name_var = tk.StringVar(value=self.config_data.get("project_name", "Untitled"))
+        ttk.Entry(self, textvariable=self.name_var, width=40).grid(row=0, column=1, columnspan=2, sticky="we")
+
+        # Input Folder
+        ttk.Label(self, text="Input Folder:").grid(row=1, column=0, sticky="e")
+        self.input_var = tk.StringVar(value=self.config_data.get("input_folder", ""))
+        ttk.Entry(self, textvariable=self.input_var, width=40).grid(row=1, column=1, sticky="we")
+        ttk.Button(self, text="Browse", command=self.select_input_folder).grid(row=1, column=2)
+
+        # Output Folder
+        ttk.Label(self, text="Output Folder:").grid(row=2, column=0, sticky="e")
+        self.output_var = tk.StringVar(value=self.config_data.get("output_folder", ""))
+        ttk.Entry(self, textvariable=self.output_var, width=40).grid(row=2, column=1, sticky="we")
+        ttk.Button(self, text="Browse", command=self.select_output_folder).grid(row=2, column=2)
+
+        # Durations
+        ttk.Label(self, text="Photo Duration (s):").grid(row=3, column=0, sticky="e")
+        self.photo_dur_var = tk.IntVar(value=self.config_data.get("photo_duration", 3))
+        ttk.Entry(self, textvariable=self.photo_dur_var, width=5).grid(row=3, column=1, sticky="w")
+
+        ttk.Label(self, text="Video Duration (s):").grid(row=4, column=0, sticky="e")
+        self.video_dur_var = tk.IntVar(value=self.config_data.get("video_duration", 10))
+        ttk.Entry(self, textvariable=self.video_dur_var, width=5).grid(row=4, column=1, sticky="w")
+
+        ttk.Label(self, text="Transition Duration (s):").grid(row=5, column=0, sticky="e")
+        self.trans_dur_var = tk.IntVar(value=self.config_data.get("transition_duration", 1))
+        ttk.Entry(self, textvariable=self.trans_dur_var, width=5).grid(row=5, column=1, sticky="w")
+
+        # Soundtrack
+        ttk.Label(self, text="Soundtrack File:").grid(row=6, column=0, sticky="e")
+        self.soundtrack_var = tk.StringVar(value=self.config_data.get("soundtrack", ""))
+        ttk.Entry(self, textvariable=self.soundtrack_var, width=40).grid(row=6, column=1, sticky="we")
+        ttk.Button(self, text="Browse", command=self.select_soundtrack).grid(row=6, column=2)
+
+        # Buttons
+        ttk.Button(self, text="Play Slideshow", command=self.play_slideshow).grid(row=7, column=0)
+        ttk.Button(self, text="Export Video", command=self.export_video).grid(row=7, column=1)
+        ttk.Button(self, text="Settings", command=self.open_settings).grid(row=7, column=2)
+        ttk.Button(self, text="Save Config", command=self.save_config).grid(row=8, column=2)
+
+    def select_input_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.input_var.set(folder)
+
+    def select_output_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.output_var.set(folder)
+
+    def select_soundtrack(self):
+        file = filedialog.askopenfilename(filetypes=[("Audio Files", "*.mp3 *.wav")])
+        if file:
+            self.soundtrack_var.set(file)
+
+    def open_settings(self):
+        messagebox.showinfo("Settings", "More GUI config editing coming soon...")
+
+    def save_config(self):
+        self.config_data.update({
+            "project_name": self.name_var.get(),
+            "input_folder": self.input_var.get(),
+            "output_folder": self.output_var.get(),
+            "photo_duration": self.photo_dur_var.get(),
+            "video_duration": self.video_dur_var.get(),
+            "transition_duration": self.trans_dur_var.get(),
+            "soundtrack": self.soundtrack_var.get()
+        })
+        save_config(self.config_data)
+        messagebox.showinfo("Saved", "Configuration saved successfully.")
+
+    def play_slideshow(self):
+        print("Preview not implemented yet.")
+
+    def export_video(self):
+        self.save_config()  # ensure latest config
+        path = self.controller.export()
+        if path:
+            messagebox.showinfo("Exported", f"Video exported to:\n{path}")
+
+
+=== END OF slideshow/gui.py ===
+
+
+=== FILE: slideshow/slides/__init__.py ===
+
+
+=== END OF slideshow/slides/__init__.py ===
+
+
+=== FILE: slideshow/slides/photo_slide.py ===
+
+try:
+    # Try absolute import first (when run from main app)
+    from slideshow.slides.slide_item import SlideItem
+except ModuleNotFoundError:
+    # Fall back to relative import (when run directly)
+    from .slide_item import SlideItem
+from pathlib import Path
+import cv2
+
+class PhotoSlide(SlideItem):
+    def render(self, output_path: Path, resolution=(640, 360), fps=30):
+        img = cv2.imread(str(self.path))
+        img = cv2.resize(img, resolution)
+        out = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*'mp4v'), fps, resolution)
+        for _ in range(int(self.duration * fps)):
+            out.write(img)
+        out.release()
+
+=== END OF slideshow/slides/photo_slide.py ===
+
+
+=== FILE: slideshow/slides/slide_item.py ===
+
+from abc import ABC, abstractmethod
+from pathlib import Path
+
+class SlideItem(ABC):
+    def __init__(self, path: Path, duration: float):
+        self.path = path
+        self.duration = duration
+
+    @abstractmethod
+    def render(self, output_path: Path, resolution: tuple[int, int], fps: int):
+        pass
+
+=== END OF slideshow/slides/slide_item.py ===
+
+
+=== FILE: slideshow/slides/video_slide.py ===
+
+from slideshow.slides.slide_item import SlideItem
+from pathlib import Path
+import subprocess
+
+class VideoSlide(SlideItem):
+    def render(self, output_path: Path, resolution=(640, 360), fps=30):
+        subprocess.run([
+            "ffmpeg", "-y", "-i", str(self.path),
+            "-vf", f"scale={resolution[0]}:{resolution[1]}", "-r", str(fps),
+            "-t", str(self.duration), str(output_path)
+        ])
+
+=== END OF slideshow/slides/video_slide.py ===
+
+
+=== FILE: slideshow/slideshowmodel.py ===
+
+from pathlib import Path
+from slideshow.slides.photo_slide import PhotoSlide
+from slideshow.slides.video_slide import VideoSlide
+from slideshow.transitions.fade_transition import FadeTransition
+import tempfile
+import shutil
+import subprocess
+
+class Slideshow:
+    def __init__(self, config: dict):
+        self.items = []
+        self.transitions = []
+        self.config = config
+        self.resolution = tuple(config["resolution"])
+        self.fps = config["fps"]
+        self.load_from_input(Path(config["input_folder"]))
+
+    def load_from_input(self, folder: Path):
+        if not folder.exists():
+            return
+        for path in sorted(folder.glob("*")):
+            if path.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+                self.items.append(PhotoSlide(path, self.config["photo_duration"]))
+            elif path.suffix.lower() in [".mp4", ".mov"]:
+                self.items.append(VideoSlide(path, self.config["video_duration"]))
+        self.transitions = [FadeTransition(self.config["transition_duration"])] * (len(self.items) - 1)
+
+    def render(self, output_path: Path):
+        tmp = Path(tempfile.mkdtemp(prefix="slideshow_"))
+        clips = []
+
+        for i, item in enumerate(self.items):
+            out = tmp / f"slide_{i:03}.mp4"
+            item.render(out, self.resolution, self.fps)
+            clips.append(out)
+
+        merged = []
+        for i in range(len(clips) - 1):
+            merged.append(clips[i])
+            trans_out = tmp / f"trans_{i:03}.mp4"
+            self.transitions[i].render(clips[i], clips[i+1], trans_out)
+            merged.append(trans_out)
+        merged.append(clips[-1])
+
+        concat_file = tmp / "concat.txt"
+        with concat_file.open("w") as f:
+            for c in merged:
+                f.write(f"file '{c.resolve()}'\n")
+
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+            "-c", "copy", str(output_path)
+        ])
+        shutil.rmtree(tmp)
+
+=== END OF slideshow/slideshowmodel.py ===
+
+
+=== FILE: slideshow/transitions/__init__.py ===
+
+
+=== END OF slideshow/transitions/__init__.py ===
+
+
+=== FILE: slideshow/transitions/fade_transition.py ===
+
+from pathlib import Path
+import subprocess
+
+class FadeTransition:
+    def __init__(self, duration=1.0):
+        self.duration = duration
+
+    def render(self, from_path: Path, to_path: Path, output_path: Path):
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-i", str(from_path), "-i", str(to_path),
+            "-filter_complex",
+            f"[0:v][1:v]xfade=transition=fade:duration={self.duration}:offset=0,format=yuv420p",
+            "-preset", "fast", str(output_path)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+=== END OF slideshow/transitions/fade_transition.py ===
+
+
+=== FILE: slideshowbuilder.py ===
+
+'''
+    SlideshowBBuilder for building slideshows from photos and videos.
+
+SlideShowBuilder/
+├── slideshowbuilder.py             ← Main entry point
+├── slideshow_config.json           ← Project config
+├── requirements.txt                ← Dependencies
+└── slideshow/
+    ├── __init__.py
+    ├── config.py
+    ├── controller.py
+    ├── gui.py
+    ├── slideshow.py
+    ├── slides/
+    │   ├── __init__.py
+    │   ├── slide_item.py
+    │   ├── photo_slide.py
+    │   └── video_slide.py
+    └── transitions/
+        ├── __init__.py
+        └── fade_transition.py
+    
+source .venv/bin/activate
+
+
+'''
+from slideshow.gui import GUI
+from slideshow.controller import SlideshowController
+
+if __name__ == "__main__":
+    controller = SlideshowController()
+    app = GUI(controller)
+    app.mainloop()
+
+=== END OF slideshowbuilder.py ===
+
+
