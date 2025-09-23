@@ -2,6 +2,17 @@ from pathlib import Path
 import subprocess
 import math
 import locale
+import numpy as np
+try:
+    import moderngl
+    import pyrr
+    from PIL import Image
+    OPENGL_AVAILABLE = True
+except ImportError:
+    OPENGL_AVAILABLE = False
+    moderngl = None
+    pyrr = None
+    Image = None
 from .base_transition import BaseTransition
 
 class OrigamiTransition(BaseTransition):
@@ -102,6 +113,197 @@ class OrigamiTransition(BaseTransition):
         """Origami transition requires OpenGL and additional 3D libraries"""
         return ["ffmpeg", "moderngl", "PIL", "numpy", "pyrr"]
     
+    def is_available(self) -> bool:
+        """Check if OpenGL and 3D dependencies are available"""
+        if not OPENGL_AVAILABLE:
+            return False
+        
+        try:
+            # Check basic requirements from parent
+            if not super().is_available():
+                return False
+            
+            # Test OpenGL context creation
+            self._test_opengl_context()
+            return True
+            
+        except Exception:
+            return False
+    
+    def _test_opengl_context(self):
+        """Test that we can create an OpenGL context"""
+        try:
+            # Create a minimal OpenGL context for testing
+            ctx = moderngl.create_context(standalone=True, size=(64, 64))
+            ctx.release()
+        except Exception as e:
+            raise RuntimeError(f"OpenGL context creation failed: {e}")
+    
+    def _create_opengl_context(self, width: int, height: int):
+        """Create OpenGL context for 3D rendering"""
+        try:
+            # Create offscreen OpenGL context
+            ctx = moderngl.create_context(standalone=True, size=(width, height))
+            
+            # Enable depth testing and blending
+            ctx.enable(moderngl.DEPTH_TEST)
+            ctx.enable(moderngl.BLEND)
+            ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+            
+            return ctx
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to create OpenGL context: {e}")
+    
+    def _create_paper_geometry(self, width: int, height: int, segments: int = 20):
+        """
+        Create paper folding geometry (vertices and triangles)
+        
+        Args:
+            width: Paper width in pixels
+            height: Paper height in pixels
+            segments: Number of segments for folding detail
+            
+        Returns:
+            Tuple of (vertices, indices, texture_coords)
+        """
+        # Create a grid of vertices for the paper surface
+        vertices = []
+        indices = []
+        tex_coords = []
+        
+        # Generate grid vertices
+        for y in range(segments + 1):
+            for x in range(segments + 1):
+                # Normalized coordinates (0 to 1)
+                u = x / segments
+                v = y / segments
+                
+                # Convert to world coordinates
+                world_x = (u - 0.5) * width
+                world_y = (v - 0.5) * height
+                world_z = 0.0  # Start flat
+                
+                vertices.extend([world_x, world_y, world_z])
+                tex_coords.extend([u, v])
+        
+        # Generate triangle indices
+        for y in range(segments):
+            for x in range(segments):
+                # Current quad vertices
+                top_left = y * (segments + 1) + x
+                top_right = top_left + 1
+                bottom_left = (y + 1) * (segments + 1) + x
+                bottom_right = bottom_left + 1
+                
+                # Two triangles per quad
+                indices.extend([
+                    top_left, bottom_left, top_right,
+                    top_right, bottom_left, bottom_right
+                ])
+        
+        return np.array(vertices, dtype=np.float32), np.array(indices, dtype=np.uint32), np.array(tex_coords, dtype=np.float32)
+    
+    def _calculate_fold_transforms(self, progress: float, fold_type: str = "horizontal"):
+        """
+        Calculate transformation matrices for folding animation
+        
+        Args:
+            progress: Animation progress (0.0 to 1.0)
+            fold_type: "horizontal", "vertical", or "diagonal"
+            
+        Returns:
+            List of transformation matrices for each paper segment
+        """
+        transforms = []
+        
+        if fold_type == "horizontal":
+            # Fold along horizontal center
+            fold_angle = progress * math.pi  # 0 to 180 degrees
+            
+            # Left half rotates around Y axis
+            left_matrix = pyrr.matrix44.create_from_y_rotation(fold_angle)
+            # Right half rotates in opposite direction
+            right_matrix = pyrr.matrix44.create_from_y_rotation(-fold_angle)
+            
+            transforms.append({
+                'region': 'left',
+                'matrix': left_matrix,
+                'pivot': np.array([-0.25, 0.0, 0.0])  # Fold line offset
+            })
+            transforms.append({
+                'region': 'right', 
+                'matrix': right_matrix,
+                'pivot': np.array([0.25, 0.0, 0.0])
+            })
+            
+        elif fold_type == "vertical":
+            # Fold along vertical center
+            fold_angle = progress * math.pi
+            
+            # Top half rotates around X axis
+            top_matrix = pyrr.matrix44.create_from_x_rotation(fold_angle)
+            # Bottom half rotates in opposite direction
+            bottom_matrix = pyrr.matrix44.create_from_x_rotation(-fold_angle)
+            
+            transforms.append({
+                'region': 'top',
+                'matrix': top_matrix,
+                'pivot': np.array([0.0, 0.25, 0.0])
+            })
+            transforms.append({
+                'region': 'bottom',
+                'matrix': bottom_matrix, 
+                'pivot': np.array([0.0, -0.25, 0.0])
+            })
+            
+        elif fold_type == "diagonal":
+            # Diagonal fold creates 4 triangular sections
+            fold_angle = progress * math.pi * 0.7  # Slightly less dramatic
+            
+            # Four diagonal transforms
+            for i, (name, angle_mult, pivot_offset) in enumerate([
+                ('top_left', 1.0, np.array([-0.25, 0.25, 0.0])),
+                ('top_right', -1.0, np.array([0.25, 0.25, 0.0])),
+                ('bottom_left', -1.0, np.array([-0.25, -0.25, 0.0])),
+                ('bottom_right', 1.0, np.array([0.25, -0.25, 0.0]))
+            ]):
+                # Diagonal rotation (combination of X and Y)
+                x_rot = pyrr.matrix44.create_from_x_rotation(fold_angle * angle_mult * 0.7)
+                y_rot = pyrr.matrix44.create_from_y_rotation(fold_angle * angle_mult * 0.3)
+                matrix = pyrr.matrix44.multiply(x_rot, y_rot)
+                
+                transforms.append({
+                    'region': name,
+                    'matrix': matrix,
+                    'pivot': pivot_offset
+                })
+        
+        return transforms
+    
+    def _add_physics_swing(self, base_progress: float, swing_amplitude: float = 0.1):
+        """
+        Add realistic swinging motion after the main fold
+        
+        Args:
+            base_progress: Base folding progress (0.0 to 1.0)
+            swing_amplitude: How much swing motion to add
+            
+        Returns:
+            Modified progress with swing physics
+        """
+        if base_progress >= 1.0:
+            # Add dampened oscillation after fold completes
+            time_since_complete = base_progress - 1.0
+            
+            # Damped sine wave for natural swinging
+            damping = math.exp(-time_since_complete * 3.0)  # Exponential decay
+            swing_freq = 8.0  # Swing frequency
+            swing_offset = math.sin(time_since_complete * swing_freq) * swing_amplitude * damping
+            
+            return 1.0 + swing_offset
+        
+        return base_progress
     def render(self, from_path: Path, to_path: Path, output_path: Path):
         """
         Render an origami folding transition between two video files
@@ -230,47 +432,6 @@ class OrigamiTransition(BaseTransition):
         # - Add physics-based swinging motion
         # - Render to frame sequence
         raise NotImplementedError("3D animation generation not yet implemented")
-    
-    def _create_paper_geometry(self):
-        """
-        Create 3D geometry for paper surfaces
-        
-        Returns:
-            Vertex data for paper quad meshes
-        """
-        # TODO: Implement paper mesh generation
-        # - Create subdivided quads for smooth folding
-        # - Set up UV coordinates for texture mapping
-        # - Define fold lines and pivot points
-        raise NotImplementedError("Paper geometry creation not yet implemented")
-    
-    def _calculate_fold_animation(self, time_progress: float) -> dict:
-        """
-        Calculate folding transformation matrices for given time
-        
-        Args:
-            time_progress: Animation progress (0.0 to 1.0)
-            
-        Returns:
-            Dictionary of transformation matrices for each paper surface
-        """
-        # TODO: Implement fold animation calculations
-        # - Calculate rotation angles based on time
-        # - Apply easing functions for smooth motion
-        # - Handle different fold patterns (2, 3, 4 images)
-        # - Add physics-based settling motion
-        raise NotImplementedError("Fold animation calculation not yet implemented")
-    
-    def _apply_lighting_and_shadows(self):
-        """
-        Apply realistic lighting and shadow effects to paper surfaces
-        """
-        # TODO: Implement lighting system
-        # - Set up directional lighting
-        # - Calculate surface normals for shading
-        # - Add subtle shadows between paper layers
-        # - Enhance 3D depth perception
-        raise NotImplementedError("Lighting and shadows not yet implemented")
     
     def _compose_video(self, animation_frames: list, output_path: Path):
         """
