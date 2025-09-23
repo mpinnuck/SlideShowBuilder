@@ -5,6 +5,7 @@ A Python-based application for creating video slideshows from photos and videos 
 ## Features
 
 - **Mixed Media Support**: Combine photos (JPG, PNG) and videos (MP4, MOV) in a single slideshow
+- **Professional Soundtrack Integration**: Add background music with automatic looping and fade effects
 - **Smooth Transitions**: Configurable fade transitions between slides
 - **Aspect Ratio Preservation**: Maintains original aspect ratios with letterboxing/pillarboxing
 - **Real-time Progress Tracking**: Accurate progress indication during video processing
@@ -130,7 +131,16 @@ The application follows a Model-View-Controller (MVC) pattern:
 - **Codec**: H264 video, AAC audio for QuickTime compatibility
 - **Aspect Ratio**: Automatic letterboxing/pillarboxing preservation
 - **Transitions**: Crossfade blending between consecutive media
+- **Soundtrack Integration**: Automatic audio looping, fade in/out effects, video-audio synchronization
 - **Working Directory**: Temporary files cleaned automatically
+
+### Audio Features
+
+- **Format Support**: MP3, WAV audio files
+- **Auto-looping**: Soundtrack repeats if shorter than video duration
+- **Fade Effects**: 1-second fade in/out for professional quality
+- **Audio Mapping**: Proper video-audio synchronization via FFmpeg
+- **Graceful Handling**: Continues without audio if soundtrack file missing
 
 ### Performance
 
