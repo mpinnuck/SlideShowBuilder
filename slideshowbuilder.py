@@ -1,27 +1,9 @@
 '''
     SlideshowBBuilder for building slideshows from photos and videos.
 
-SlideShowBuilder/
-├── slideshowbuilder.py             ← Main entry point
-├── slideshow_config.json           ← Project config
-├── requirements.txt                ← Dependencies
-└── slideshow/
-    ├── __init__.py
-    ├── config.py
-    ├── controller.py
-    ├── gui.py
-    ├── slideshow.py
-    ├── slides/
-    │   ├── __init__.py
-    │   ├── slide_item.py
-    │   ├── photo_slide.py
-    │   └── video_slide.py
-    └── transitions/
-        ├── __init__.py
-        └── fade_transition.py
-    
+    Setup Instructions:   
 source .venv/bin/activate
-
+pip install -r requirements.txt
 
 '''
 
