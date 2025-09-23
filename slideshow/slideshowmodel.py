@@ -1,7 +1,7 @@
 from pathlib import Path
 from slideshow.slides.photo_slide import PhotoSlide
 from slideshow.slides.video_slide import VideoSlide
-from slideshow.transitions.fade_transition import FadeTransition
+from slideshow.transitions import get_transition
 import shutil
 import subprocess
 
@@ -22,7 +22,22 @@ class Slideshow:
                 self.items.append(PhotoSlide(path, self.config["photo_duration"]))
             elif path.suffix.lower() in [".mp4", ".mov"]:
                 self.items.append(VideoSlide(path, self.config["video_duration"]))
-        self.transitions = [FadeTransition(self.config["transition_duration"])] * (len(self.items) - 1)
+        
+        # Get transition type from config, default to 'fade'
+        transition_type = self.config.get("transition_type", "fade")
+        transition_duration = self.config["transition_duration"]
+        
+        # Create transitions between slides
+        self.transitions = []
+        for i in range(len(self.items) - 1):
+            try:
+                transition = get_transition(transition_type, duration=transition_duration)
+                self.transitions.append(transition)
+            except (ValueError, ImportError) as e:
+                # Fallback to fade if requested transition is not available
+                print(f"Warning: {transition_type} transition not available ({e}), using fade")
+                transition = get_transition("fade", duration=transition_duration)
+                self.transitions.append(transition)
 
     def render(self, output_path: Path, progress_callback=None):
         # Create working folder in output directory

@@ -62,6 +62,13 @@ class GUI(tk.Tk):
         self.photo_dur_var = tk.IntVar(value=self.config_data.get("photo_duration", 3))
         ttk.Entry(self, textvariable=self.photo_dur_var, width=5).grid(row=4, column=1, sticky="w", padx=(5, 0))
 
+        # Transition Type (positioned right after Photo Duration in same column area)
+        ttk.Label(self, text="Transition:").grid(row=4, column=1, sticky="w", padx=(80, 5))
+        self.transition_var = tk.StringVar(value=self.config_data.get("transition_type", "fade"))
+        self.transition_combo = ttk.Combobox(self, textvariable=self.transition_var, width=12, state="readonly")
+        self.transition_combo.grid(row=4, column=1, sticky="w", padx=(150, 0))
+        self._populate_transitions()
+
         ttk.Label(self, text="Video Duration (s):").grid(row=5, column=0, sticky="e")
         self.video_dur_var = tk.IntVar(value=self.config_data.get("video_duration", 10))
         ttk.Entry(self, textvariable=self.video_dur_var, width=5).grid(row=5, column=1, sticky="w", padx=(5, 0))
@@ -117,6 +124,9 @@ class GUI(tk.Tk):
         
         # Add initial log message
         self.log_message("Slideshow Builder initialized")
+        
+        # Log available transitions now that log panel is ready
+        self._log_available_transitions()
 
     def log_message(self, message):
         """Add a message to the log panel with timestamp"""
@@ -169,6 +179,45 @@ class GUI(tk.Tk):
             self.soundtrack_var.set(file)
             self.log_message(f"Soundtrack selected: {file}")
 
+    def _populate_transitions(self):
+        """Populate the transition dropdown with available transitions"""
+        from slideshow.transitions import list_available_transitions
+        
+        try:
+            available_transitions = list_available_transitions()
+            transition_names = [t['name'] for t in available_transitions]
+            
+            if not transition_names:
+                # Fallback if no transitions available
+                transition_names = ['fade']
+            
+            self.transition_combo['values'] = transition_names
+            
+            # Set default value if current selection not available
+            current = self.transition_var.get()
+            if current not in transition_names:
+                self.transition_var.set(transition_names[0])
+                
+        except Exception as e:
+            # Fallback to just fade if there's an error
+            self.transition_combo['values'] = ['fade']
+            self.transition_var.set('fade')
+            print(f"Warning: Could not load transitions ({e}), using fade only")
+
+    def _log_available_transitions(self):
+        """Log available transitions to the log panel"""
+        from slideshow.transitions import list_available_transitions
+        
+        try:
+            available_transitions = list_available_transitions()
+            if available_transitions:
+                transition_info = [f"{t['display_name']}" for t in available_transitions]
+                self.log_message(f"Available transitions: {', '.join(transition_info)}")
+            else:
+                self.log_message("Available transitions: Fade (default)")
+        except Exception as e:
+            self.log_message(f"Warning: Could not load transitions ({e}), using fade only")
+
     def open_settings(self):
         self.log_message("Settings dialog coming soon...")
 
@@ -180,6 +229,7 @@ class GUI(tk.Tk):
             "photo_duration": self.photo_dur_var.get(),
             "video_duration": self.video_dur_var.get(),
             "transition_duration": self.trans_dur_var.get(),
+            "transition_type": self.transition_var.get(),
             "soundtrack": self.soundtrack_var.get()
         })
         save_config(self.config_data)

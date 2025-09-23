@@ -1,11 +1,31 @@
 from pathlib import Path
 import subprocess
+from .base_transition import BaseTransition
 
-class FadeTransition:
+class FadeTransition(BaseTransition):
+    """Simple crossfade transition using FFmpeg"""
+    
     def __init__(self, duration=1.0):
-        self.duration = duration
+        super().__init__(duration)
+        self.name = "Fade"
+        self.description = "Simple crossfade between slides"
+
+    def get_requirements(self) -> list:
+        """FFmpeg-based transition only requires ffmpeg"""
+        return ["ffmpeg"]
 
     def render(self, from_path: Path, to_path: Path, output_path: Path):
+        """
+        Render a crossfade transition between two video files
+        
+        Args:
+            from_path: Path to the source video file
+            to_path: Path to the destination video file
+            output_path: Path where the transition video should be saved
+        """
+        # Validate inputs
+        self.validate_inputs(from_path, to_path, output_path)
+        
         # Get duration of first video to calculate proper offset
         # The transition should start at (first_video_duration - transition_duration)
         # so that it crossfades at the end of the first video
