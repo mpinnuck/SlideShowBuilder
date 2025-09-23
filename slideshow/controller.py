@@ -4,8 +4,6 @@ from pathlib import Path
 
 class SlideshowController:
     def __init__(self):
-        self.config = load_config()
-        self.slideshow = Slideshow(self.config)
         self.progress_callback = None
         self.log_callback = None
     
@@ -17,8 +15,11 @@ class SlideshowController:
         """Register a callback for log messages"""
         self.log_callback = log_callback
 
-    def export(self):        
-        output_path = Path(self.config["output_folder"]) / f"{self.config['project_name']}.mp4"
+    def export(self, config: dict):
+        # Create slideshow model with provided config
+        slideshow = Slideshow(config)
+        
+        output_path = Path(config["output_folder"]) / f"{config['project_name']}.mp4"
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        self.slideshow.render(output_path, self.progress_callback, self.log_callback)
+        slideshow.render(output_path, self.progress_callback, self.log_callback)
         return output_path

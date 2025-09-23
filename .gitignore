@@ -223,3 +223,10 @@ data/
 
 # Log files
 *.log
+
+# Generated documentation and consolidated files
+class_diagram.md
+slideshowbuilder_class_diagram.png
+slideshow.txt
+# End of .gitignore
+

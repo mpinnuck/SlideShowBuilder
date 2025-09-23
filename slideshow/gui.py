@@ -37,44 +37,52 @@ class GUI(tk.Tk):
         # Project Info
         ttk.Label(self, text="Project Name:").grid(row=0, column=0, sticky="e")
         self.name_var = tk.StringVar(value=self.config_data.get("project_name", "Untitled"))
+        self.name_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.name_var, width=40).grid(row=0, column=1, columnspan=2, sticky="we")
 
         # Input Folder
         ttk.Label(self, text="Input Folder:").grid(row=1, column=0, sticky="e")
         self.input_var = tk.StringVar(value=self.config_data.get("input_folder", ""))
+        self.input_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.input_var, width=40).grid(row=1, column=1, sticky="we")
         ttk.Button(self, text="Browse", command=self.select_input_folder).grid(row=1, column=2)
 
         # Output Folder
         ttk.Label(self, text="Output Folder:").grid(row=2, column=0, sticky="e")
         self.output_var = tk.StringVar(value=self.config_data.get("output_folder", ""))
+        self.output_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.output_var, width=40).grid(row=2, column=1, sticky="we")
         ttk.Button(self, text="Browse", command=self.select_output_folder).grid(row=2, column=2)
 
         # Soundtrack
         ttk.Label(self, text="Soundtrack File:").grid(row=3, column=0, sticky="e")
         self.soundtrack_var = tk.StringVar(value=self.config_data.get("soundtrack", ""))
+        self.soundtrack_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.soundtrack_var, width=40).grid(row=3, column=1, sticky="we")
         ttk.Button(self, text="Browse", command=self.select_soundtrack).grid(row=3, column=2)
 
         # Durations
         ttk.Label(self, text="Photo Duration (s):").grid(row=4, column=0, sticky="e")
         self.photo_dur_var = tk.IntVar(value=self.config_data.get("photo_duration", 3))
+        self.photo_dur_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.photo_dur_var, width=5).grid(row=4, column=1, sticky="w", padx=(5, 0))
 
         # Transition Type (positioned right after Photo Duration in same column area)
         ttk.Label(self, text="Transition:").grid(row=4, column=1, sticky="w", padx=(80, 5))
         self.transition_var = tk.StringVar(value=self.config_data.get("transition_type", "fade"))
+        self.transition_var.trace_add('write', lambda *args: self._auto_save_config())
         self.transition_combo = ttk.Combobox(self, textvariable=self.transition_var, width=12, state="readonly")
         self.transition_combo.grid(row=4, column=1, sticky="w", padx=(150, 0))
         self._populate_transitions()
 
         ttk.Label(self, text="Video Duration (s):").grid(row=5, column=0, sticky="e")
         self.video_dur_var = tk.IntVar(value=self.config_data.get("video_duration", 10))
+        self.video_dur_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.video_dur_var, width=5).grid(row=5, column=1, sticky="w", padx=(5, 0))
 
         ttk.Label(self, text="Transition Duration (s):").grid(row=6, column=0, sticky="e")
         self.trans_dur_var = tk.IntVar(value=self.config_data.get("transition_duration", 1))
+        self.trans_dur_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.trans_dur_var, width=5).grid(row=6, column=1, sticky="w", padx=(5, 0))
 
         # Buttons
@@ -217,12 +225,10 @@ class GUI(tk.Tk):
                 self.log_message("Available transitions: Fade (default)")
         except Exception as e:
             self.log_message(f"Warning: Could not load transitions ({e}), using fade only")
-
-    def open_settings(self):
-        self.log_message("Settings dialog coming soon...")
-
-    def save_config(self):
-        self.config_data.update({
+    
+    def _get_current_config(self) -> dict:
+        """Get current configuration from GUI widgets"""
+        return {
             "project_name": self.name_var.get(),
             "input_folder": self.input_var.get(),
             "output_folder": self.output_var.get(),
@@ -230,10 +236,23 @@ class GUI(tk.Tk):
             "video_duration": self.video_dur_var.get(),
             "transition_duration": self.trans_dur_var.get(),
             "transition_type": self.transition_var.get(),
-            "soundtrack": self.soundtrack_var.get()
-        })
+            "soundtrack": self.soundtrack_var.get(),
+            "fps": self.config_data.get("fps", 30),
+            "resolution": self.config_data.get("resolution", [1920, 1080])
+        }
+    
+    def _auto_save_config(self):
+        """Automatically update and save config when controls change"""
+        self.config_data.update(self._get_current_config())
         save_config(self.config_data)
         self._check_play_button_state()  # Update Play button state
+
+    def open_settings(self):
+        self.log_message("Settings dialog coming soon...")
+
+    def save_config(self):
+        """Manual save config - auto-save already handles updates"""
+        self._auto_save_config()
         self.log_message("Configuration saved successfully")
 
     def play_slideshow(self):
@@ -241,8 +260,9 @@ class GUI(tk.Tk):
         import os
         import subprocess
         
-        # Get the expected output path
-        output_path = Path(self.config_data["output_folder"]) / f"{self.config_data['project_name']}.mp4"
+        # Get the expected output path from current config
+        current_config = self._get_current_config()
+        output_path = Path(current_config["output_folder"]) / f"{current_config['project_name']}.mp4"
         
         if output_path.exists():
             self.log_message(f"Opening slideshow: {output_path}")
@@ -303,14 +323,14 @@ class GUI(tk.Tk):
     
     def _check_play_button_state(self):
         """Enable/disable Play button based on output file existence"""
-        output_path = Path(self.config_data["output_folder"]) / f"{self.config_data['project_name']}.mp4"
+        current_config = self._get_current_config()
+        output_path = Path(current_config["output_folder"]) / f"{current_config['project_name']}.mp4"
         if output_path.exists():
             self.play_button.configure(state='normal')
         else:
             self.play_button.configure(state='disabled')
 
     def export_video(self):
-        self.save_config()  # ensure latest config
         self.log_message("Starting video export...")
         self.reset_progress()
         
@@ -325,7 +345,7 @@ class GUI(tk.Tk):
     def _export_video_thread(self):
         """Background thread for video export"""
         try:
-            path = self.controller.export()
+            path = self.controller.export(self.config_data)
             if path:
                 self.after(0, lambda: self.log_message(f"Video export completed: {path}"))
                 self.after(0, lambda: self.update_progress(100, 100))
