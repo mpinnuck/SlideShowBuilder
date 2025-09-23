@@ -206,6 +206,10 @@ data/output/*.mp4
 data/output/working/
 media/output/
 
+# Test/sample data directories (not needed in repository)
+data/slides/
+data/soundtracks/
+
 # Temporary files
 *.tmp
 *.temp
