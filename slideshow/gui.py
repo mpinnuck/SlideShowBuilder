@@ -216,19 +216,46 @@ class GUI(tk.Tk):
             self.log_message(f"Warning: Could not load transitions ({e}), using fade only")
     
     def _get_current_config(self) -> dict:
-        """Get current configuration from GUI widgets"""
-        return {
+        """Get current configuration from GUI widgets with error handling"""
+        config = {
             "project_name": self.name_var.get(),
             "input_folder": self.input_var.get(),
             "output_folder": self.output_var.get(),
-            "photo_duration": self.photo_dur_var.get(),
-            "video_duration": self.video_dur_var.get(),
-            "transition_duration": self.trans_dur_var.get(),
             "transition_type": self.transition_var.get(),
             "soundtrack": self.soundtrack_var.get(),
-            "fps": self.config_data.get("fps", 30),
             "resolution": self.config_data.get("resolution", [1920, 1080])
         }
+        
+        # Handle numeric fields with validation and error reporting
+        def safe_get_float(var, field_name, default_value):
+            try:
+                # Get raw string value first
+                raw_value = var._tk.globalgetvar(var._name)
+                if raw_value == "" or raw_value is None:
+                    return default_value
+                return float(raw_value)
+            except (ValueError, TypeError, tk.TclError, AttributeError) as e:
+                error_msg = f"Invalid {field_name} - using previous value ({default_value})"
+                self.log_message(error_msg)
+                return default_value
+        
+        # Get numeric values with validation
+        config["photo_duration"] = safe_get_float(
+            self.photo_dur_var, "photo duration", 
+            self.config_data.get("photo_duration", 3.0)
+        )
+        
+        config["video_duration"] = safe_get_float(
+            self.video_dur_var, "video duration", 
+            self.config_data.get("video_duration", 5.0)
+        )
+        
+        config["transition_duration"] = safe_get_float(
+            self.trans_dur_var, "transition duration", 
+            self.config_data.get("transition_duration", 1.0)
+        )
+        
+        return config
     
     def _auto_save_config(self):
         """Automatically update and save config when controls change"""

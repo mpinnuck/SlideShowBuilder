@@ -228,5 +228,17 @@ data/
 class_diagram.md
 slideshowbuilder_class_diagram.png
 slideshow.txt
+
+# Development and testing files
+archive/
+*.zip
+cleanup_project.sh
+PROJECT_STRUCTURE.md
+
+# Test output files  
+*test*.mp4
+*Test*.mp4
+*debug*.mp4
+
 # End of .gitignore
 
