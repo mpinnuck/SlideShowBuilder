@@ -6,7 +6,7 @@
   "video_duration": 10.0,
   "transition_duration": 1.0,
   "transition_type": "origami",
-  "fps": 30,
+  "fps": 25,
   "resolution": [
     1920,
     1080
