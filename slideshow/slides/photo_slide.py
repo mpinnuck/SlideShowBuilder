@@ -1,57 +1,50 @@
-try:
-    # Try absolute import first (when run from main app)
-    from slideshow.slides.slide_item import SlideItem
-except ModuleNotFoundError:
-    # Fall back to relative import (when run directly)
-    from .slide_item import SlideItem
 from pathlib import Path
 import cv2
 import numpy as np
 
-class PhotoSlide(SlideItem):
-    def render(self, output_path: Path, resolution=(640, 360), fps=30):
-        print(f"Rendering photo slide: {self.path} -> {output_path}")
-        img = cv2.imread(str(self.path))
-        if img is None:
-            raise ValueError(f"Could not load image: {self.path}")
-        
-        # Get original dimensions
-        h, w = img.shape[:2]
-        target_w, target_h = resolution
-        print(f"Original size: {w}x{h}, Target: {target_w}x{target_h}")
-        
-        # Calculate scaling to fit within target while preserving aspect ratio
+class PhotoSlide:
+    def __init__(self, path: Path, duration: float, fps: int = 30):
+        self.path = path
+        self.duration = duration
+        self.fps = fps
+
+    def render(self, output_path: Path, log_callback=None, progress_callback=None):
+
+        if log_callback:
+            log_callback(f"[Slideshow] Rendering slide: {self.path.name} ({self.duration:.2f}s, {self.fps} fps)")
+
+        cap = cv2.imread(str(self.path))
+        if cap is None:
+            raise RuntimeError(f"Cannot load image: {self.path}")
+
+        h, w = cap.shape[:2]
+        if log_callback:
+            log_callback(f"Rendering photo slide: {self.path} -> {output_path}\n"
+                         f"Original size: {w}x{h}, Target: 1920x1080")
+
+        # --- Resize and pad ---
+        target_w, target_h = 1920, 1080
         scale = min(target_w / w, target_h / h)
         new_w, new_h = int(w * scale), int(h * scale)
-        print(f"Scaled size: {new_w}x{new_h}, Scale factor: {scale:.3f}")
-        
-        # Resize image maintaining aspect ratio
-        resized = cv2.resize(img, (new_w, new_h))
-        
-        # Create black background with target resolution using NumPy
-        result = np.zeros((target_h, target_w, 3), dtype=img.dtype)
-        
-        # Center the resized image on the black background
-        y_offset = (target_h - new_h) // 2
-        x_offset = (target_w - new_w) // 2
-        result[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
-        
-        # Write video with proper codec
-        fourcc = cv2.VideoWriter_fourcc(*'H264')  # Use H264 codec
-        out = cv2.VideoWriter(str(output_path), fourcc, fps, resolution)
-        
-        if not out.isOpened():
-            print("H264 codec not available, trying mp4v...")
-            # Fallback to mp4v if H264 not available
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(str(output_path), fourcc, fps, resolution)
-        
-        if not out.isOpened():
-            raise RuntimeError(f"Could not open video writer for {output_path}")
-        
-        frame_count = int(self.duration * fps)
-        print(f"Writing {frame_count} frames for {self.duration}s duration")
-        for _ in range(frame_count):
-            out.write(result)
+        resized = cv2.resize(cap, (new_w, new_h))
+
+        top = (target_h - new_h) // 2
+        bottom = target_h - new_h - top
+        left = (target_w - new_w) // 2
+        right = target_w - new_w - left
+        framed = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+
+        # --- Write video using CFR ---
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')
+        out = cv2.VideoWriter(str(output_path), fourcc, self.fps, (target_w, target_h))
+        total_frames = int(self.fps * self.duration)
+
+        for i in range(total_frames):
+            out.write(framed)
+            if progress_callback and (i % max(total_frames // 10, 1) == 0):
+                progress_callback(i / total_frames)
+
         out.release()
-        print(f"Photo slide rendered successfully: {output_path}")
+
+        if log_callback:
+            log_callback(f"Photo slide rendered successfully: {output_path} ({total_frames} frames @ {self.fps} fps)")

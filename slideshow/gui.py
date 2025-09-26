@@ -116,6 +116,9 @@ class GUI(tk.Tk):
         self.log_text = tk.Text(log_frame, height=8, width=80, wrap=tk.WORD, state=tk.DISABLED)
         self.log_text.grid(row=0, column=0, sticky="ewns")
         
+        # Add clipboard support for log panel
+        self._setup_log_clipboard_support()
+        
         # Vertical scrollbar
         v_scrollbar = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         v_scrollbar.grid(row=0, column=1, sticky="ns")
@@ -137,15 +140,115 @@ class GUI(tk.Tk):
         self._log_available_transitions()
 
     def log_message(self, message):
-        """Add a message to the log panel with timestamp"""
+        """Add a message to the log panel with timestamp or overwrite last line if message ends with \r"""
         import datetime
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}\n"
         
         self.log_text.configure(state=tk.NORMAL)
-        self.log_text.insert(tk.END, log_entry)
+
+        if message.endswith("\r"):
+            # Overwrite the last line instead of adding a new one
+            message = message.rstrip("\r")
+            # Delete the last line
+            self.log_text.delete("end-2l", "end-1l")
+            log_entry = f"[{timestamp}] {message}\n"
+            self.log_text.insert(tk.END, log_entry)
+        else:
+            log_entry = f"[{timestamp}] {message}\n"
+            self.log_text.insert(tk.END, log_entry)
+
         self.log_text.configure(state=tk.DISABLED)
-        self.log_text.see(tk.END)  # Auto-scroll to bottom
+        self.log_text.see(tk.END)
+
+    def _setup_log_clipboard_support(self):
+        """Setup clipboard support for the log panel"""
+        # Create context menu for log panel
+        self.log_context_menu = tk.Menu(self, tearoff=0)
+        self.log_context_menu.add_command(label="Copy All", command=self._copy_all_log)
+        self.log_context_menu.add_command(label="Copy Selected", command=self._copy_selected_log)
+        self.log_context_menu.add_separator()
+        self.log_context_menu.add_command(label="Clear Log", command=self._clear_log)
+        
+        # Bind right-click to show context menu
+        self.log_text.bind("<Button-3>", self._show_log_context_menu)  # Right-click on macOS/Linux
+        self.log_text.bind("<Control-Button-1>", self._show_log_context_menu)  # Ctrl+click on macOS
+        
+        # Bind keyboard shortcuts
+        self.log_text.bind("<Command-c>", lambda e: self._copy_selected_log())  # macOS
+        self.log_text.bind("<Control-c>", lambda e: self._copy_selected_log())  # Windows/Linux
+        self.log_text.bind("<Command-a>", lambda e: self._select_all_log())  # macOS
+        self.log_text.bind("<Control-a>", lambda e: self._select_all_log())  # Windows/Linux
+        
+        # Enable text selection
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.configure(state=tk.DISABLED)
+
+    def _show_log_context_menu(self, event):
+        """Show context menu for log panel"""
+        try:
+            # Check if there's selected text
+            if self.log_text.tag_ranges(tk.SEL):
+                self.log_context_menu.entryconfig("Copy Selected", state=tk.NORMAL)
+            else:
+                self.log_context_menu.entryconfig("Copy Selected", state=tk.DISABLED)
+            
+            self.log_context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.log_context_menu.grab_release()
+
+    def _copy_all_log(self):
+        """Copy all log content to clipboard"""
+        try:
+            self.log_text.configure(state=tk.NORMAL)
+            content = self.log_text.get(1.0, tk.END)
+            self.clipboard_clear()
+            self.clipboard_append(content.strip())
+            self.log_text.configure(state=tk.DISABLED)
+            self.log_message("All log content copied to clipboard")
+        except Exception as e:
+            self.log_message(f"Failed to copy log content: {e}")
+
+    def _copy_selected_log(self):
+        """Copy selected log content to clipboard"""
+        try:
+            if self.log_text.tag_ranges(tk.SEL):
+                self.log_text.configure(state=tk.NORMAL)
+                selected_text = self.log_text.selection_get()
+                self.clipboard_clear()
+                self.clipboard_append(selected_text)
+                self.log_text.configure(state=tk.DISABLED)
+                self.log_message("Selected log content copied to clipboard")
+            else:
+                # If no selection, copy current line
+                self.log_text.configure(state=tk.NORMAL)
+                current_line = self.log_text.get("insert linestart", "insert lineend")
+                if current_line.strip():
+                    self.clipboard_clear()
+                    self.clipboard_append(current_line.strip())
+                    self.log_message("Current line copied to clipboard")
+                self.log_text.configure(state=tk.DISABLED)
+        except tk.TclError:
+            # No selection
+            self.log_message("No text selected to copy")
+        except Exception as e:
+            self.log_message(f"Failed to copy selected text: {e}")
+
+    def _select_all_log(self):
+        """Select all text in log panel"""
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.tag_add(tk.SEL, "1.0", tk.END)
+        self.log_text.mark_set(tk.INSERT, "1.0")
+        self.log_text.see(tk.INSERT)
+        self.log_text.configure(state=tk.DISABLED)
+
+    def _clear_log(self):
+        """Clear all log content"""
+        result = messagebox.askyesno("Clear Log", "Are you sure you want to clear all log content?")
+        if result:
+            self.log_text.configure(state=tk.NORMAL)
+            self.log_text.delete(1.0, tk.END)
+            self.log_text.configure(state=tk.DISABLED)
+            self.log_message("Log cleared")
 
     def update_progress(self, value, maximum=100):
         """Update progress bar with current value"""

@@ -1,35 +1,41 @@
-from slideshow.slides.slide_item import SlideItem
+
 from pathlib import Path
 import subprocess
 
-class VideoSlide(SlideItem):
-    def render(self, output_path: Path, resolution=(640, 360), fps=30):
-        print(f"Rendering video slide: {self.path} -> {output_path}")
+class VideoSlide:
+    def __init__(self, path: Path, duration: float, fps: int = 30):
+        self.path = path
+        self.duration = duration
+        self.fps = fps
 
-        # Scaling and padding filter for aspect ratio
-        filter_scale = (
-            f"scale={resolution[0]}:{resolution[1]}:force_original_aspect_ratio=decrease,"
-            f"pad={resolution[0]}:{resolution[1]}:(ow-iw)/2:(oh-ih)/2:black"
-        )
+    def render(self, output_path: Path, log_callback=None, progress_callback=None):
+        import subprocess
 
-        cmd = [
+        if log_callback:
+            log_callback(f"[Slideshow] Rendering video slide: {self.path.name} "
+                         f"(target={self.duration:.2f}s, output={output_path})")
+
+        ffmpeg_cmd = [
             "ffmpeg", "-y",
             "-i", str(self.path),
-            "-vf", filter_scale,
-            "-t", str(self.duration),
+            "-vf", f"fps={self.fps},scale=1920:1080:force_original_aspect_ratio=decrease,"
+                   f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",
+            "-t", f"{self.duration:.2f}",
+            "-r", str(self.fps),  # Force constant frame rate
             "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",   # Ensures compatibility
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac",
-            "-shortest",              # Prevents FFmpeg from outputting black after video ends
+            "-shortest",
             "-movflags", "+faststart",
             str(output_path)
         ]
 
-        print(f"FFmpeg command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        if log_callback:
+            log_callback(f"FFmpeg command: {' '.join(ffmpeg_cmd)}")
 
-        if result.returncode != 0:
-            print(f"FFmpeg error: {result.stderr}")
-            raise RuntimeError(f"FFmpeg failed: {result.stderr}")
-        else:
-            print(f"Video slide rendered successfully: {output_path}")
+        process = subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if process.returncode != 0:
+            raise RuntimeError(f"FFmpeg failed for {self.path}:\n{process.stderr}")
+
+        if log_callback:
+            log_callback(f"Video slide rendered successfully: {output_path}")
