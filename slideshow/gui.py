@@ -23,15 +23,25 @@ class GUI(tk.Tk):
         self._check_play_button_state()
     
     def center_window(self):
+            # Set initial size before centering
+            initial_width = 800  # Make window wider
+            initial_height = 600  # Make window taller too
+            
             self.update_idletasks()
-            w = self.winfo_width()
-            h = self.winfo_height()
+            
+            # Use our preferred size if larger than the natural size
+            natural_width = self.winfo_width()
+            natural_height = self.winfo_height()
+            
+            w = max(initial_width, natural_width)
+            h = max(initial_height, natural_height)
+            
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
             x = (sw // 2) - (w // 2)
             y = (sh // 2) - (h // 2)
             self.geometry(f"{w}x{h}+{x}+{y}")
-            self.minsize(600, 400)
+            self.minsize(800, 500)  # Increase minimum size too
 
     def create_widgets(self):
         # Project Info
@@ -149,16 +159,17 @@ class GUI(tk.Tk):
         if message.endswith("\r"):
             # Overwrite the last line instead of adding a new one
             message = message.rstrip("\r")
-            # Delete the last line
             self.log_text.delete("end-2l", "end-1l")
             log_entry = f"[{timestamp}] {message}\n"
             self.log_text.insert(tk.END, log_entry)
         else:
+            # Normal log: write entry and leave an extra blank line ready for overwrite logs
             log_entry = f"[{timestamp}] {message}\n"
             self.log_text.insert(tk.END, log_entry)
 
         self.log_text.configure(state=tk.DISABLED)
         self.log_text.see(tk.END)
+
 
     def _setup_log_clipboard_support(self):
         """Setup clipboard support for the log panel"""

@@ -63,22 +63,34 @@ class Slideshow:
             self._log(f"[Slideshow] WARN: get_file_duration failed for {path}: {e}")
         return None
 
-    def get_concat_duration(self, concat_file: Path) -> Optional[float]:
-        """Return the expected video timeline from the concat list (seconds), or None."""
-        try:
-            cmd = [
-                "ffprobe", "-v", "error",
-                "-f", "concat", "-safe", "0",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(concat_file),
-            ]
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode == 0 and result.stdout.strip():
-                return float(result.stdout.strip())
-        except Exception as e:
-            self._log(f"[Slideshow] WARN: concat duration probe failed: {e}")
-        return None
+#    def get_estimated_duration(self, fudge: float = 1.1) -> float:
+        """
+        Return a rough estimate of the slideshow total duration.
+        Based on configured durations for photos, videos, and transitions,
+        with a small fudge factor to avoid underestimating.
+        """
+        photo_duration = self.config.get("photo_duration", 3.0)
+        video_duration_setting = self.config.get("video_duration", 5.0)
+        transition_duration = self.config.get("transition_duration", 1.0)
+
+        total = 0.0
+        for slide in self.slides:
+            if isinstance(slide, PhotoSlide):
+                total += photo_duration
+            elif isinstance(slide, VideoSlide):
+                total += slide.duration or video_duration_setting
+
+        # Add transition durations (approximate)
+        if len(self.slides) > 1:
+            total += (len(self.slides) - 1) * transition_duration
+
+        return total * fudge
+
+    def get_estimated_duration(self, fudge: float = 1.1) -> float:
+        total = sum(getattr(slide, "duration", 0) for slide in self.slides)
+        if len(self.slides) > 1:
+            total += (len(self.slides) - 1) * self.config.get("transition_duration", 1.0)
+        return total * fudge
 
     # -------------------------------
     # Slide Loading
@@ -93,7 +105,6 @@ class Slideshow:
         for i, path in enumerate(media_files):
             ext = path.suffix.lower()
             if ext in (".jpg", ".jpeg", ".png"):
-                self._log(f"[Slideshow] Adding photo: {path.name}")
                 self.slides.append(PhotoSlide(path, self.config["photo_duration"]))
             elif ext in (".mp4", ".mov"):
                 video_duration_setting = self.config.get("video_duration", 5.0)
@@ -135,7 +146,7 @@ class Slideshow:
         base_offset: processing_weight offset (start of assembly region)
         span_steps:  portion of assembly steps to fill (e.g. 40% or 50% of assembly half)
         """
-        self._log(f"[Slideshow] Running ffmpeg:\n{' '.join(cmd)}")
+#        self._log(f"[Slideshow] Running ffmpeg:\n{' '.join(cmd)}")
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         last_report = -1
         while True:
@@ -161,8 +172,8 @@ class Slideshow:
     # -------------------------------
     def render(self, output_path: Path, progress_callback=None, log_callback=None):
         """
-        Keeps the legacy signature expected by SlideshowController.
-        If callbacks are provided here, they override ones set at __init__.
+        Render slideshow into final video.
+        Minimal but informative logging for GUI: only phase/task progress, not per-slide debug.
         """
         if log_callback:
             self.log_callback = log_callback
@@ -170,29 +181,30 @@ class Slideshow:
             self.progress_callback = progress_callback
 
         try:
-            # Allocate 50% to slides+transitions, 50% to finalization (passes 1–3)
             total_items = len(self.slides)
             total_transitions = max(0, total_items - 1)
-            processing_weight = total_items + total_transitions              # first half
-            assembly_weight = max(1, processing_weight)                      # second half (mirrors first)
+            processing_weight = total_items + total_transitions
+            assembly_weight = max(1, processing_weight)
             total_weighted_steps = processing_weight + assembly_weight
 
             clips = []
             # --- Render slides ---
+            self._log("") # Newline before slide rendering
             for i, slide in enumerate(self.slides):
-                self._log(f"[Slideshow] Rendering slide {i+1}/{total_items} ({slide.__class__.__name__})")
+                self._log(f"[Slideshow] Rendering slides ({i+1}/{total_items})...{'\r' if i < total_items else '\n'}")
                 out_path = self.working_dir / f"slide_{i:03}.mp4"
-                slide.render(out_path, log_callback=self.log_callback)
+                slide.render(out_path, log_callback=None)  # disable verbose FFmpeg logging in GUI
                 clips.append(out_path)
                 if self.progress_callback:
                     self.progress_callback(i + 1, total_weighted_steps)
 
             # --- Render transitions ---
+            self._log("") # Newline before transition rendering
             merged = []
             for i in range(len(clips) - 1):
+                self._log(f"[Slideshow] Rendering transitions ({i+1}/{len(clips)-1})...{'\r' if i < total_transitions else '\n'}")
                 merged.append(clips[i])
                 trans_out = self.working_dir / f"trans_{i:03}.mp4"
-                self._log(f"[Slideshow] Rendering transition {i+1}/{len(clips)-1}")
                 self.transitions[i].render(clips[i], clips[i + 1], trans_out)
                 merged.append(trans_out)
                 if self.progress_callback:
@@ -206,26 +218,8 @@ class Slideshow:
                     f.write(f"file '{c.resolve()}'\n")
 
             # Estimate duration for progress scaling during Pass 1
-            expected_duration_concat = self.get_concat_duration(self.concat_file)
-            if expected_duration_concat is None:
-                # Rough fallback estimate
-                transition_duration = self.config.get("transition_duration", 1)
-                has_transitions = len(self.slides) > 1
-                est = 0.0
-                for idx, s in enumerate(self.slides):
-                    eff = s.duration
-                    if has_transitions:
-                        if idx == 0 or idx == len(self.slides) - 1:
-                            eff -= transition_duration / 2
-                        else:
-                            eff -= transition_duration
-                    est += max(eff, 0.5)
-                if has_transitions:
-                    est += (len(self.slides) - 1) * transition_duration
-                expected_duration_concat = max(1.0, est)
-                self._log(f"[Slideshow] Using estimated concat duration: {expected_duration_concat:.2f}s")
-            else:
-                self._log(f"[Slideshow] Using probed concat duration: {expected_duration_concat:.2f}s")
+            expected_duration = self.get_estimated_duration()
+            self._log(f"[Slideshow] Estimated duration for progress scaling: {expected_duration:.2f}s")
 
             # Split assembly half: Pass1 40%, Pass2 50%, Pass3 10% (sums to 100% of assembly region)
             pass1_span = int(assembly_weight * 0.40)
@@ -233,99 +227,79 @@ class Slideshow:
             pass3_span = assembly_weight - pass1_span - pass2_span
             assembly_base = processing_weight
 
-            # === PASS 1: Assemble VIDEO-ONLY (with progress) ===
+
+            # --- Pass 1: Assemble video-only ---
+            self._log(f"\n[Slideshow] Assembling video-only...")
             cmd_pass1 = [
                 "ffmpeg", "-y",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
-                "-c:v", "libx264",
-                "-preset", "fast",
-                "-movflags", "+faststart",
-                "-progress", "pipe:1",
+                "-c:v", "libx264", "-preset", "fast",
+                "-movflags", "+faststart", "-progress", "pipe:1",
                 str(self.video_only),
             ]
-            self._run_ffmpeg_progress(cmd_pass1, expected_duration_concat,
-                                      base_offset=assembly_base,
-                                      span_steps=pass1_span,
-                                      total_steps=total_weighted_steps)
+            self._run_ffmpeg_progress(cmd_pass1, 
+                                    expected_duration or 1.0,
+                                    base_offset=processing_weight,
+                                    span_steps=int(assembly_weight * 0.4),
+                                    total_steps=total_weighted_steps)
 
-            # Get ACTUAL duration from the rendered video-only file
             actual_duration = self.get_file_duration(self.video_only)
-            if not actual_duration:
-                # As a last resort, use the concat estimate
-                actual_duration = expected_duration_concat
-            self._log(f"[Slideshow] Video-only duration: {actual_duration:.2f}s")
+            self._log(f"[Slideshow] Video-only duration: {actual_duration:.2f}s" if actual_duration else
+                    "[Slideshow] WARNING: could not determine duration — using estimate")
 
-            # Soundtrack handling
+            # --- Pass 2: Mux soundtrack (if present) ---
             soundtrack_path = self.config.get("soundtrack", "")
             has_soundtrack = bool(soundtrack_path) and Path(soundtrack_path).exists()
 
-            # === PASS 2: Mux soundtrack EXACTLY to video length (no fade), with progress ===
-            if has_soundtrack:
-                # Loop audio and trim output to EXACT video length with -t (no -shortest)
-                cmd_pass2 = [
+            self._log("[Slideshow] Muxing soundtrack..." if has_soundtrack else "[Slideshow] Finalizing video (no soundtrack)...")
+            cmd_pass2 = (
+                [
                     "ffmpeg", "-y",
                     "-i", str(self.video_only),
                     "-stream_loop", "-1", "-i", str(soundtrack_path),
                     "-map", "0:v", "-map", "1:a",
-                    "-t", f"{actual_duration:.3f}",
-                    "-c:v", "copy",
-                    "-c:a", "aac",
-                    "-movflags", "+faststart",
-                    "-progress", "pipe:1",
+                    "-t", f"{actual_duration:.3f}" if actual_duration else "0",
+                    "-c:v", "copy", "-c:a", "aac",
+                    "-movflags", "+faststart", "-progress", "pipe:1",
                     str(self.mux_no_fade),
                 ]
-                self._run_ffmpeg_progress(cmd_pass2, actual_duration,
-                                          base_offset=assembly_base + pass1_span,
-                                          span_steps=pass2_span,
-                                          total_steps=total_weighted_steps)
-            else:
-                # No soundtrack: still remux with progress so the bar moves
-                cmd_pass2 = [
+                if has_soundtrack
+                else [
                     "ffmpeg", "-y",
                     "-i", str(self.video_only),
-                    "-c", "copy",
-                    "-movflags", "+faststart",
-                    "-progress", "pipe:1",
-                    str(self.mux_no_fade),
+                    "-c", "copy", "-movflags", "+faststart",
+                    "-progress", "pipe:1", str(self.mux_no_fade),
                 ]
-                self._run_ffmpeg_progress(cmd_pass2, actual_duration,
-                                          base_offset=assembly_base + pass1_span,
-                                          span_steps=pass2_span,
-                                          total_steps=total_weighted_steps)
+            )
+            self._run_ffmpeg_progress(cmd_pass2,
+                                    actual_duration or 1.0,
+                                    base_offset=processing_weight + int(assembly_weight * 0.4),
+                                    span_steps=int(assembly_weight * 0.5),
+                                    total_steps=total_weighted_steps)
 
-            # === PASS 3: Apply final 1s fade (only if soundtrack exists & long enough), with progress ===
+            # --- Pass 3: Fade audio at end (if soundtrack present & duration known) ---
             if has_soundtrack and actual_duration and actual_duration > 1.0:
+                self._log(f"[Slideshow] Applying 1s audio fade at {actual_duration-1:.2f}s")
                 fade_filter = f"afade=out:st={actual_duration - 1:.2f}:d=1"
                 cmd_pass3 = [
-                    "ffmpeg", "-y",
-                    "-i", str(self.mux_no_fade),
-                    "-c:v", "copy",
-                    "-af", fade_filter,
-                    "-movflags", "+faststart",
-                    "-progress", "pipe:1",
+                    "ffmpeg", "-y", "-i", str(self.mux_no_fade),
+                    "-c:v", "copy", "-af", fade_filter,
+                    "-movflags", "+faststart", "-progress", "pipe:1",
                     str(output_path),
                 ]
-                # For pass3 progress, reuse the same duration for scaling
-                self._run_ffmpeg_progress(cmd_pass3, actual_duration,
-                                          base_offset=assembly_base + pass1_span + pass2_span,
-                                          span_steps=pass3_span,
-                                          total_steps=total_weighted_steps)
+                self._run_ffmpeg_progress(cmd_pass3,
+                                        actual_duration,
+                                        base_offset=processing_weight + int(assembly_weight * 0.9),
+                                        span_steps=int(assembly_weight * 0.1),
+                                        total_steps=total_weighted_steps)
             else:
-                # Copy as-is to final (quick), but keep progress consistent
                 shutil.copyfile(self.mux_no_fade, output_path)
                 if self.progress_callback:
                     self.progress_callback(total_weighted_steps, total_weighted_steps)
-
-            # Final tick
-            if self.progress_callback:
-                self.progress_callback(total_weighted_steps, total_weighted_steps)
 
             self._log(f"[Slideshow] Slideshow complete: {output_path}")
 
         finally:
             if self.working_dir.exists():
                 self._log(f"[Slideshow] Cleaning working dir: {self.working_dir}")
-                try:
-                    shutil.rmtree(self.working_dir)
-                except Exception as e:
-                    self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
+                shutil.rmtree(self.working_dir, ignore_errors=True)               
