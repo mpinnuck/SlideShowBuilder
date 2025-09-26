@@ -25,17 +25,27 @@ class FadeTransition(BaseTransition):
         """
         # Validate inputs
         self.validate_inputs(from_path, to_path, output_path)
-        
-        # Get duration of first video to calculate proper offset
-        # The transition should start at (first_video_duration - transition_duration)
-        # so that it crossfades at the end of the first video
-        
+
+        # If duration is -1 or 0, use the full duration of the first video
+        transition_duration = self.duration
+        if self.duration in (-1, 0):
+            # Get duration of the first video using ffprobe
+            import json
+            result = subprocess.run([
+                "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(from_path)
+            ], capture_output=True, text=True)
+            try:
+                info = json.loads(result.stdout)
+                transition_duration = float(info["format"]["duration"])
+            except Exception:
+                transition_duration = 1.0  # fallback
+
         subprocess.run([
             "ffmpeg", "-y",
             "-i", str(from_path), "-i", str(to_path),
             "-filter_complex",
-            f"[0:v][1:v]xfade=transition=fade:duration={self.duration}:offset=0",
-            "-t", str(self.duration),  # Only output the transition duration
+            f"[0:v][1:v]xfade=transition=fade:duration={transition_duration}:offset=0",
+            "-t", str(transition_duration),  # Only output the transition duration
             "-preset", "fast", 
             "-c:v", "libx264", 
             "-c:a", "aac",

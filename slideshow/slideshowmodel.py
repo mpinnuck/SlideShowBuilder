@@ -9,6 +9,7 @@ from slideshow.slides.photo_slide import PhotoSlide
 from slideshow.slides.video_slide import VideoSlide
 from slideshow.transitions import get_transition
 from slideshow.transitions.utils import get_video_duration
+from slideshow.config import DEFAULT_CONFIG
 
 
 class Slideshow:
@@ -32,6 +33,10 @@ class Slideshow:
         self.concat_file = self.working_dir / "concat.txt"
         self.video_only = self.working_dir / "slideshow_video_only.mp4"   # Pass 1 output
         self.mux_no_fade = self.working_dir / "slideshow_mux_no_fade.mp4" # Pass 2 output
+
+        fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
+        resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
+        self._log(f"[Slideshow] Using fps: {fps}, resolution: {resolution}")
 
         self.load_slides()
 
@@ -105,7 +110,9 @@ class Slideshow:
         for i, path in enumerate(media_files):
             ext = path.suffix.lower()
             if ext in (".jpg", ".jpeg", ".png"):
-                self.slides.append(PhotoSlide(path, self.config["photo_duration"]))
+                resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
+                fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
+                self.slides.append(PhotoSlide(path, self.config["photo_duration"], fps=fps, resolution=resolution))
             elif ext in (".mp4", ".mov"):
                 video_duration_setting = self.config.get("video_duration", 5.0)
                 if video_duration_setting == 0:
@@ -117,21 +124,31 @@ class Slideshow:
                     self._log(f"[Slideshow] WARNING: could not get duration for {path.name}: {e}")
                     actual_duration = video_duration_setting
 
+                resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
+                fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
+                
                 if video_duration_setting == -1:
                     self._log(f"[Slideshow] Using full duration for {path.name}: {actual_duration:.2f}s")
-                    self.slides.append(VideoSlide(path, actual_duration))
+                    self.slides.append(VideoSlide(path, actual_duration, fps=fps, resolution=resolution))
                 else:
                     final_duration = actual_duration if i == len(media_files) - 1 else min(video_duration_setting, actual_duration)
                     if i == len(media_files) - 1:
                         self._log(f"[Slideshow] Last slide {path.name}: forcing full duration {final_duration:.2f}s")
-                    self.slides.append(VideoSlide(path, final_duration))
+                    self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution))
 
         # build transitions
-        transition_type = self.config.get("transition_type", "fade")
-        transition_duration = self.config.get("transition_duration", 1)
+        transition_type = self.config.get("transition_type", DEFAULT_CONFIG["transition_type"])
+        transition_duration = self.config.get("transition_duration", DEFAULT_CONFIG["transition_duration"])
+        resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
+        fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
+        
         for _ in range(max(0, len(self.slides) - 1)):
             try:
-                self.transitions.append(get_transition(transition_type, duration=transition_duration))
+                # Some transitions need fps/resolution, others don't
+                if transition_type in ['origami']:
+                    self.transitions.append(get_transition(transition_type, duration=transition_duration, resolution=resolution, fps=fps))
+                else:
+                    self.transitions.append(get_transition(transition_type, duration=transition_duration))
             except (ValueError, ImportError) as e:
                 self._log(f"[Slideshow] WARNING: transition '{transition_type}' not available ({e}), using fade")
                 self.transitions.append(get_transition("fade", duration=transition_duration))
@@ -302,4 +319,4 @@ class Slideshow:
         finally:
             if self.working_dir.exists():
                 self._log(f"[Slideshow] Cleaning working dir: {self.working_dir}")
-                shutil.rmtree(self.working_dir, ignore_errors=True)               
+                shutil.rmtree(self.working_dir, ignore_errors=True)

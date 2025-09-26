@@ -1,12 +1,14 @@
 
 from pathlib import Path
 import subprocess
+from slideshow.config import DEFAULT_CONFIG
 
 class VideoSlide:
-    def __init__(self, path: Path, duration: float, fps: int = 30):
+    def __init__(self, path: Path, duration: float, fps: int = None, resolution: tuple = None):
         self.path = path
         self.duration = duration
-        self.fps = fps
+        self.fps = fps if fps is not None else DEFAULT_CONFIG["fps"]
+        self.resolution = resolution if resolution is not None else tuple(DEFAULT_CONFIG["resolution"])
 
     def render(self, output_path: Path, log_callback=None, progress_callback=None):
         import subprocess
@@ -18,8 +20,8 @@ class VideoSlide:
         ffmpeg_cmd = [
             "ffmpeg", "-y",
             "-i", str(self.path),
-            "-vf", f"fps={self.fps},scale=1920:1080:force_original_aspect_ratio=decrease,"
-                   f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",
+            "-vf", f"fps={self.fps},scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=decrease,"
+                   f"pad={self.resolution[0]}:{self.resolution[1]}:(ow-iw)/2:(oh-ih)/2:black",
             "-t", f"{self.duration:.2f}",
             "-r", str(self.fps),  # Force constant frame rate
             "-c:v", "libx264",

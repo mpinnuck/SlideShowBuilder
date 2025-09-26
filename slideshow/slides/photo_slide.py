@@ -1,12 +1,14 @@
 from pathlib import Path
 import cv2
 import numpy as np
+from slideshow.config import DEFAULT_CONFIG
 
 class PhotoSlide:
-    def __init__(self, path: Path, duration: float, fps: int = 30):
+    def __init__(self, path: Path, duration: float, fps: int = None, resolution: tuple = None):
         self.path = path
         self.duration = duration
-        self.fps = fps
+        self.fps = fps if fps is not None else DEFAULT_CONFIG["fps"]
+        self.resolution = resolution if resolution is not None else tuple(DEFAULT_CONFIG["resolution"])
 
     def render(self, output_path: Path, log_callback=None, progress_callback=None):
 
@@ -20,10 +22,10 @@ class PhotoSlide:
         h, w = cap.shape[:2]
         if log_callback:
             log_callback(f"Rendering photo slide: {self.path} -> {output_path}\n"
-                         f"Original size: {w}x{h}, Target: 1920x1080")
+                         f"Original size: {w}x{h}, Target: {self.resolution[0]}x{self.resolution[1]}")
 
         # --- Resize and pad ---
-        target_w, target_h = 1920, 1080
+        target_w, target_h = self.resolution
         scale = min(target_w / w, target_h / h)
         new_w, new_h = int(w * scale), int(h * scale)
         resized = cv2.resize(cap, (new_w, new_h))
