@@ -9,7 +9,7 @@ DEFAULT_CONFIG = {
     "video_duration": 5.0,
     "transition_duration": 1.0,
     "transition_type": "fade",
-    "fps": 25,  # ✅ Default to PAL/25fps for AU
+    "fps": 30,  # ✅ Default for Apple devices
     "resolution": [1920, 1080]  # ✅ Default to Full HD
 }
 
