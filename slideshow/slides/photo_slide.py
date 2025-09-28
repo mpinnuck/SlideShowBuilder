@@ -1,25 +1,35 @@
 from pathlib import Path
 import cv2
 import numpy as np
+from PIL import Image
 from slideshow.config import DEFAULT_CONFIG
+from slideshow.slides.slide_item import SlideItem
+from slideshow.transitions.utils import load_and_resize_image
 
-class PhotoSlide:
+
+class PhotoSlide(SlideItem):
     def __init__(self, path: Path, duration: float, fps: int = None, resolution: tuple = None):
-        self.path = path
-        self.duration = duration
+        resolution = resolution if resolution is not None else tuple(DEFAULT_CONFIG["resolution"])
+        super().__init__(path, duration, resolution)
         self.fps = fps if fps is not None else DEFAULT_CONFIG["fps"]
-        self.resolution = resolution if resolution is not None else tuple(DEFAULT_CONFIG["resolution"])
+
+    def _load_image(self, close: bool):
+        """
+        For photos, open/close image is identical — simply load and resize.
+        close=True is ignored.
+        """
+        return load_and_resize_image(self.path, self.resolution)
 
     def render(self, output_path: Path, log_callback=None, progress_callback=None):
-
+        """Render the photo slide into a CFR (constant frame rate) video clip."""
         if log_callback:
-            log_callback(f"[Slideshow] Rendering slide: {self.path.name} ({self.duration:.2f}s, {self.fps} fps)")
+            log_callback(f"[Slideshow] Rendering photo: {self.path.name} ({self.duration:.2f}s, {self.fps} fps)")
 
-        cap = cv2.imread(str(self.path))
-        if cap is None:
+        img = cv2.imread(str(self.path))
+        if img is None:
             raise RuntimeError(f"Cannot load image: {self.path}")
 
-        h, w = cap.shape[:2]
+        h, w = img.shape[:2]
         if log_callback:
             log_callback(f"Rendering photo slide: {self.path} -> {output_path}\n"
                          f"Original size: {w}x{h}, Target: {self.resolution[0]}x{self.resolution[1]}")
@@ -28,7 +38,7 @@ class PhotoSlide:
         target_w, target_h = self.resolution
         scale = min(target_w / w, target_h / h)
         new_w, new_h = int(w * scale), int(h * scale)
-        resized = cv2.resize(cap, (new_w, new_h))
+        resized = cv2.resize(img, (new_w, new_h))
 
         top = (target_h - new_h) // 2
         bottom = target_h - new_h - top
@@ -50,3 +60,6 @@ class PhotoSlide:
 
         if log_callback:
             log_callback(f"Photo slide rendered successfully: {output_path} ({total_frames} frames @ {self.fps} fps)")
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(path={self.path}, duration={self.duration}, fps={self.fps}, resolution={self.resolution})"

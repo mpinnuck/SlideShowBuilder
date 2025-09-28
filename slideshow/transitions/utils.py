@@ -61,7 +61,7 @@ def extract_frame(video_path, last=False):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-def load_and_resize_image(image_or_path, target_size=(1920, 1080)):
+#def load_and_resize_image(image_or_path, target_size=(1920, 1080)):
     """Load an image or use PIL.Image and resize with letter/pillarboxing."""
     img = image_or_path if isinstance(image_or_path, Image.Image) else Image.open(image_or_path).convert("RGB")
     original_width, original_height = img.size
@@ -84,6 +84,28 @@ def load_and_resize_image(image_or_path, target_size=(1920, 1080)):
         x_offset, y_offset = (target_width - new_width) // 2, 0
 
     resized = img.resize((new_width, new_height), Image.LANCZOS)
+    canvas.paste(resized, (x_offset, y_offset))
+    return canvas
+
+def load_and_resize_image(image_or_path, target_size=(1920, 1080), letterbox=True):
+    """Load an image and resize with optional letter/pillarboxing to match target_size exactly."""
+    from PIL import Image
+    img = image_or_path if isinstance(image_or_path, Image.Image) else Image.open(image_or_path).convert("RGB")
+    original_width, original_height = img.size
+    target_width, target_height = target_size
+
+    # Maintain aspect ratio by scaling to fit
+    scale = min(target_width / original_width, target_height / original_height)
+    new_width, new_height = int(original_width * scale), int(original_height * scale)
+    resized = img.resize((new_width, new_height), Image.LANCZOS)
+
+    if not letterbox:
+        return resized  # Natural size, just scaled to fit
+
+    # Letterbox/pillarbox to fill target canvas
+    canvas = Image.new("RGB", target_size, (0, 0, 0))
+    x_offset = (target_width - new_width) // 2
+    y_offset = (target_height - new_height) // 2
     canvas.paste(resized, (x_offset, y_offset))
     return canvas
 

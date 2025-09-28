@@ -2,6 +2,7 @@
 import re
 import shutil
 import subprocess
+import random
 from pathlib import Path
 from typing import List, Optional
 
@@ -10,6 +11,8 @@ from slideshow.slides.video_slide import VideoSlide
 from slideshow.transitions import get_transition
 from slideshow.transitions.utils import get_video_duration
 from slideshow.config import DEFAULT_CONFIG
+from slideshow.transitions.transition_factory import TransitionFactory
+
 
 
 class Slideshow:
@@ -37,6 +40,15 @@ class Slideshow:
         fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
         resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
         self._log(f"[Slideshow] Using fps: {fps}, resolution: {resolution}")
+
+
+        # Ceate slected transition
+        self.transition = TransitionFactory.create(
+            name=self.config.get("transition_type", DEFAULT_CONFIG["transition_type"]),
+            duration=float(self.config.get("transition_duration", DEFAULT_CONFIG["transition_duration"])),
+            resolution=tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"])),
+            fps=int(self.config.get("fps", DEFAULT_CONFIG["fps"]))
+        )
 
         self.load_slides()
 
@@ -68,28 +80,6 @@ class Slideshow:
             self._log(f"[Slideshow] WARN: get_file_duration failed for {path}: {e}")
         return None
 
-#    def get_estimated_duration(self, fudge: float = 1.1) -> float:
-        """
-        Return a rough estimate of the slideshow total duration.
-        Based on configured durations for photos, videos, and transitions,
-        with a small fudge factor to avoid underestimating.
-        """
-        photo_duration = self.config.get("photo_duration", 3.0)
-        video_duration_setting = self.config.get("video_duration", 5.0)
-        transition_duration = self.config.get("transition_duration", 1.0)
-
-        total = 0.0
-        for slide in self.slides:
-            if isinstance(slide, PhotoSlide):
-                total += photo_duration
-            elif isinstance(slide, VideoSlide):
-                total += slide.duration or video_duration_setting
-
-        # Add transition durations (approximate)
-        if len(self.slides) > 1:
-            total += (len(self.slides) - 1) * transition_duration
-
-        return total * fudge
 
     def get_estimated_duration(self, fudge: float = 1.1) -> float:
         total = sum(getattr(slide, "duration", 0) for slide in self.slides)
@@ -136,22 +126,8 @@ class Slideshow:
                         self._log(f"[Slideshow] Last slide {path.name}: forcing full duration {final_duration:.2f}s")
                     self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution))
 
-        # build transitions
-        transition_type = self.config.get("transition_type", DEFAULT_CONFIG["transition_type"])
-        transition_duration = self.config.get("transition_duration", DEFAULT_CONFIG["transition_duration"])
-        resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
-        fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
-        
-        for _ in range(max(0, len(self.slides) - 1)):
-            try:
-                # Some transitions need fps/resolution, others don't
-                if transition_type in ['origami']:
-                    self.transitions.append(get_transition(transition_type, duration=transition_duration, resolution=resolution, fps=fps))
-                else:
-                    self.transitions.append(get_transition(transition_type, duration=transition_duration))
-            except (ValueError, ImportError) as e:
-                self._log(f"[Slideshow] WARNING: transition '{transition_type}' not available ({e}), using fade")
-                self.transitions.append(get_transition("fade", duration=transition_duration))
+        # Removed self.update_transitions() from here to decouple transitions from slide loading
+        # Transitions should be updated explicitly when needed, such as during export or transition type change.
 
     # -------------------------------
     # Internal: run ffmpeg and stream progress into the assembly half
@@ -183,6 +159,7 @@ class Slideshow:
         if proc.returncode != 0:
             stderr_out = proc.stderr.read() if proc.stderr else ""
             raise subprocess.CalledProcessError(proc.returncode, cmd, stderr_out)
+
 
     # -------------------------------
     # Rendering
@@ -222,7 +199,9 @@ class Slideshow:
                 self._log(f"[Slideshow] Rendering transitions ({i+1}/{len(clips)-1})...{'\r' if i < total_transitions else '\n'}")
                 merged.append(clips[i])
                 trans_out = self.working_dir / f"trans_{i:03}.mp4"
-                self.transitions[i].render(clips[i], clips[i + 1], trans_out)
+
+                self.transition.render(clips[i], clips[i+1], trans_out)
+                
                 merged.append(trans_out)
                 if self.progress_callback:
                     self.progress_callback(total_items + i + 1, total_weighted_steps)
@@ -320,3 +299,8 @@ class Slideshow:
             if self.working_dir.exists():
                 self._log(f"[Slideshow] Cleaning working dir: {self.working_dir}")
                 shutil.rmtree(self.working_dir, ignore_errors=True)
+
+    def set_transition_type(self, transition_type: str):
+        """Update the transition type in the configuration."""
+        self.config["transition_type"] = transition_type
+        self._log(f"[Slideshow] Transition type updated to: {transition_type}")

@@ -81,6 +81,8 @@ class GUI(tk.Tk):
         ttk.Label(self, text="Transition:").grid(row=4, column=1, sticky="w", padx=(80, 5))
         self.transition_var = tk.StringVar(value=self.config_data.get("transition_type", "fade"))
         self.transition_var.trace_add('write', lambda *args: self._auto_save_config())
+        # Log the change for manual verification
+        self.transition_var.trace_add('write', lambda *args: self.log_message(f"Transition type changed to: {self.transition_var.get()}"))
         self.transition_combo = ttk.Combobox(self, textvariable=self.transition_var, width=12, state="readonly")
         self.transition_combo.grid(row=4, column=1, sticky="w", padx=(150, 0))
         self._populate_transitions()
