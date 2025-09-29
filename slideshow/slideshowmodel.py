@@ -24,7 +24,9 @@ class Slideshow:
         self.slides: List[PhotoSlide | VideoSlide] = []
         self.transitions: List[object] = []  # from get_transition()
 
-        self.working_dir = Path("data/output/working")
+        # Use config output folder instead of hardcoded path
+        output_folder = Path(self.config.get("output_folder", "media/output"))
+        self.working_dir = output_folder / "working"
         if self.working_dir.exists():
             self._log(f"[Slideshow] Cleaning existing working dir: {self.working_dir}")
             try:
