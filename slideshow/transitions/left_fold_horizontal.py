@@ -1,7 +1,7 @@
 # slideshow/transitions/left_fold_horizontal.py
 import moderngl
 from slideshow.transitions.left_right_fold import LeftRightFold
-from slideshow.transitions.origami_render import render_phase1_frames_left, render_phase2_frames
+from slideshow.transitions.origami_render import render_phase1_frames, render_phase2_frames
 
 class LeftFoldHorizontal(LeftRightFold):
     """Left-to-right origami-style fold transition."""
@@ -18,9 +18,9 @@ class LeftFoldHorizontal(LeftRightFold):
 
 #            print(f"[LeftFoldHorizontal] Phase 1: {phase1_frames} frames, Phase 2: {phase2_frames} frames")
 
-            phase1 = render_phase1_frames_left(ctx, from_img, to_img, num_frames=phase1_frames)
-            # ✅ Use shared Phase 2 renderer with direction="right"
-            phase2 = render_phase2_frames(ctx, to_img, from_img, num_frames=phase2_frames, direction="right")
+            # ✅ Use shared Phases renderer with direction="right"
+            phase1 = self.render_phase1_frames(ctx, from_img, to_img, num_frames=phase1_frames)
+            phase2 = self.render_phase2_frames(ctx, from_img, to_img, num_frames=phase2_frames)
             return phase1 + phase2
         finally:
             ctx.release()

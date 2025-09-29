@@ -11,5 +11,20 @@
     1920,
     1080
   ],
-  "soundtrack": "/Users/markpinnuck/Dev/GitHub/SlideShowBuilder/data/soundtracks/G._Love_Special_Sauce_-_City_Livin_Album_Version_Album_Version_(mp3.pm).mp3"
+  "soundtrack": "/Users/markpinnuck/Dev/GitHub/SlideShowBuilder/data/soundtracks/G._Love_Special_Sauce_-_City_Livin_Album_Version_Album_Version_(mp3.pm).mp3",
+
+  "intro_title": {
+    "enabled": true,
+    "text": "Europe 2025",
+    "duration": 8.0,
+    "font_path": "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "font_size": 180,
+    "text_color": [255, 215, 0, 255],
+    "shadow_color": [0, 0, 0, 180],
+    "shadow_offset": [8, 8],
+    "rotation": {
+      "axis": "y",
+      "clockwise": true
+    }
+  }
 }

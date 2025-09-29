@@ -12,7 +12,7 @@ from slideshow.transitions import get_transition
 from slideshow.transitions.utils import get_video_duration
 from slideshow.config import DEFAULT_CONFIG
 from slideshow.transitions.transition_factory import TransitionFactory
-
+from slideshow.transitions.intro_title import IntroTitle
 
 
 class Slideshow:
@@ -188,6 +188,8 @@ class Slideshow:
             assembly_weight = max(1, processing_weight)
             total_weighted_steps = processing_weight + assembly_weight
 
+
+
             # --- Render slides ---
             self._log("")  # Newline before slide rendering
             for i, slide in enumerate(self.slides):
@@ -195,6 +197,17 @@ class Slideshow:
                 slide.render(self.working_dir)  # sets slide._rendered_clip
                 if self.progress_callback:
                     self.progress_callback(i + 1, total_weighted_steps)
+
+            # --- Render Intro Title (before slides) ---
+            intro = IntroTitle()
+            self._intro_clip = None
+            if False: #intro.enabled and self.slides:
+                first_slide = self.slides[0]
+                first_frame = first_slide.get_from_image()
+                intro_path = self.working_dir / "intro_title.mp4"
+                self._log(f"[Slideshow] Rendering intro title: {intro.text}")
+                self._intro_clip = intro.render(first_frame, intro_path)
+
 
             # --- Render transitions ---
             self._log("")  # Newline before transition rendering
@@ -209,6 +222,10 @@ class Slideshow:
 
             # --- Write concat file ---
             with self.concat_file.open("w") as f:
+                # Prepend intro clip if it exists
+                if self._intro_clip:
+                    f.write(f"file '{self._intro_clip.resolve()}'\n")
+
                 for i, slide in enumerate(self.slides):
                     f.write(f"file '{slide.get_rendered_clip().resolve()}'\n")
                     # Insert transition after every slide except last
