@@ -98,7 +98,8 @@ def save_frames_as_video(frames, output_path, fps=25):
         for i, frame in enumerate(frames):
             Image.fromarray(frame, "RGB").save(f"{tmp}/frame_{i:06d}.png")
         cmd = [
-            "ffmpeg", "-y", "-r", str(fps),
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-r", str(fps),
             "-i", f"{tmp}/frame_%06d.png",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", str(output_path)
         ]

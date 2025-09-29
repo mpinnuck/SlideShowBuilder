@@ -10,8 +10,8 @@ class SlideItem(ABC):
         self.path = path
         self.duration = duration
         self.resolution = resolution
-        self._open_image: Optional[Image.Image] = None
-        self._close_image: Optional[Image.Image] = None
+        self._to_image: Optional[Image.Image] = None
+        self._from_image: Optional[Image.Image] = None
         self._rendered_clip: Optional[Path] = None
 
     def render(self, working_dir: Path, log_callback=None, progress_callback=None) -> Path:
@@ -34,19 +34,19 @@ class SlideItem(ABC):
         if not self._rendered_clip:
             raise RuntimeError(f"Cannot extract frame: video not rendered yet ({self.path.name})")
         frame = extract_frame(self._rendered_clip, last=From)
-        return load_and_resize_image(frame, self.resolution)
+        return frame
 
     def get_to_image(self):
         """Return the opening frame, caching it to avoid repeated extraction."""
-        if self._open_image is None:
-            self._open_image = self._load_image(From=False)
-        return self._open_image
+        if self._to_image is None:
+            self._to_image = self._load_image(From=False)
+        return self._to_image
 
     def get_from_image(self):
         """Return the closing frame, caching it to avoid repeated extraction."""
-        if self._close_image is None:
-            self._close_image = self._load_image(From=True)
-        return self._close_image
+        if self._from_image is None:
+            self._from_image = self._load_image(From=True)
+        return self._from_image
 
     def get_rendered_clip(self) -> Optional[Path]:
         """Return the path to the rendered clip (if render() has been called)."""

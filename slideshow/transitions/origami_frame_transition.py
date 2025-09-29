@@ -9,23 +9,12 @@ class OrigamiFrameTransition(BaseTransition, ABC):
         self.resolution = resolution
         self.fps = fps
 
-    def _prepare_images(self, from_path, to_path):
-        from_img = load_and_resize_image(
-            extract_frame(from_path, last=True) if self._is_video(from_path) else from_path,
-            self.resolution)
-        to_img = load_and_resize_image(
-            extract_frame(to_path, last=False) if self._is_video(to_path) else to_path,
-            self.resolution)
-        return from_img, to_img
-
-    def _is_video(self, path):
-        return str(path).lower().endswith((".mov", ".mp4", ".m4v"))
-
     @abstractmethod
     def render_frames(self, from_img, to_img):
         pass
 
-    def render(self, from_path, to_path, output_path):
-        from_img, to_img = self._prepare_images(from_path, to_path)
+    def render(self, from_slide, to_slide, output_path):
+        from_img = from_slide.get_from_image()
+        to_img = to_slide.get_to_image()
         frames = self.render_frames(from_img, to_img)
         save_frames_as_video(frames, output_path, fps=self.fps)

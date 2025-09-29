@@ -50,10 +50,6 @@ class OrigamiTransition(BaseTransition):
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Use the new SlideItem API to get frame paths
-        from_frame = from_slide.get_last_frame()
-        to_frame = to_slide.get_first_frame()
-
-        # Select and render the actual fold transition
+        from_frame = from_slide.get_from_image()        # Select and render the actual fold transition
         transition = self._select_transition()
-        transition.render(from_frame, to_frame, output_path)
+        transition.render(from_slide, to_slide, output_path)

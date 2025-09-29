@@ -25,19 +25,20 @@ class TransitionFactory:
         Returns:
             A transition instance ready to use.
         """
+        from slideshow.transitions.fade_transition import FadeTransition
+        from slideshow.transitions.origami_transition import OrigamiTransition
+
+        TRANSITIONS = {
+            "fade": lambda: FadeTransition(duration=duration),
+            "origami": lambda: OrigamiTransition(duration=duration, resolution=resolution, fps=fps),
+        }
+
         base = name.lower()
 
-        if base == "fade":
-            from slideshow.transitions.fade_transition import FadeTransition
-            return FadeTransition(duration=duration)
-
-        if base == "origami":
-            from slideshow.transitions.origami_transition import OrigamiTransition
-            return OrigamiTransition(duration=duration, resolution=resolution, fps=fps)
-
         if base in ("random", "rand", "rnd"):
-            choice = random.choice(["fade", "origami"])
-            return TransitionFactory.create(choice, duration=duration, resolution=resolution, fps=fps)
+            base = random.choice(list(TRANSITIONS.keys()))
+
+        if base in TRANSITIONS:
+            return TRANSITIONS[base]()
 
         raise ValueError(f"Unknown transition type: {name}")
-    

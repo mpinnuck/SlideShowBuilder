@@ -1,11 +1,11 @@
 {
-  "project_name": "TestProject10v30fp",
+  "project_name": "TestProjectO10v30fp",
   "input_folder": "data/slides",
   "output_folder": "data/output",
   "photo_duration": 3.0,
   "video_duration": 10.0,
   "transition_duration": 1.0,
-  "transition_type": "fade",
+  "transition_type": "origami",
   "fps": 30,
   "resolution": [
     1920,
