@@ -160,6 +160,10 @@ class Slideshow:
             stderr_out = proc.stderr.read() if proc.stderr else ""
             raise subprocess.CalledProcessError(proc.returncode, cmd, stderr_out)
 
+    def set_transition_type(self, transition_type: str):
+        """Update the transition type in the configuration."""
+        self.config["transition_type"] = transition_type
+        self._log(f"[Slideshow] Transition type updated to: {transition_type}")
 
     # -------------------------------
     # Rendering
@@ -167,7 +171,8 @@ class Slideshow:
     def render(self, output_path: Path, progress_callback=None, log_callback=None):
         """
         Render slideshow into final video.
-        Minimal but informative logging for GUI: only phase/task progress, not per-slide debug.
+        Uses SlideItem.render() to generate individual clips, then transitions,
+        then concatenates everything into one final video with optional audio.
         """
         if log_callback:
             self.log_callback = log_callback
@@ -181,48 +186,37 @@ class Slideshow:
             assembly_weight = max(1, processing_weight)
             total_weighted_steps = processing_weight + assembly_weight
 
-            clips = []
             # --- Render slides ---
-            self._log("") # Newline before slide rendering
+            self._log("")  # Newline before slide rendering
             for i, slide in enumerate(self.slides):
                 self._log(f"[Slideshow] Rendering slides ({i+1}/{total_items})...{'\r' if i < total_items else '\n'}")
-                out_path = self.working_dir / f"slide_{i:03}.mp4"
-                slide.render(out_path, log_callback=None)  # disable verbose FFmpeg logging in GUI
-                clips.append(out_path)
+                slide.render(self.working_dir)  # sets slide._rendered_clip
                 if self.progress_callback:
                     self.progress_callback(i + 1, total_weighted_steps)
 
             # --- Render transitions ---
-            self._log("") # Newline before transition rendering
-            merged = []
-            for i in range(len(clips) - 1):
-                self._log(f"[Slideshow] Rendering transitions ({i+1}/{len(clips)-1})...{'\r' if i < total_transitions else '\n'}")
-                merged.append(clips[i])
+            self._log("")  # Newline before transition rendering
+            transition_clips = []
+            for i in range(total_items - 1):
+                self._log(f"[Slideshow] Rendering transitions ({i+1}/{total_transitions})...{'\r' if i < total_transitions else '\n'}")
                 trans_out = self.working_dir / f"trans_{i:03}.mp4"
-
-                self.transition.render(clips[i], clips[i+1], trans_out)
-                
-                merged.append(trans_out)
+                self.transition.render(self.slides[i], self.slides[i + 1], trans_out)
+                transition_clips.append((i, trans_out))
                 if self.progress_callback:
                     self.progress_callback(total_items + i + 1, total_weighted_steps)
-            if clips:
-                merged.append(clips[-1])
 
             # --- Write concat file ---
             with self.concat_file.open("w") as f:
-                for c in merged:
-                    f.write(f"file '{c.resolve()}'\n")
+                for i, slide in enumerate(self.slides):
+                    f.write(f"file '{slide.get_rendered_clip().resolve()}'\n")
+                    # Insert transition after every slide except last
+                    for idx, tclip in transition_clips:
+                        if idx == i:
+                            f.write(f"file '{tclip.resolve()}'\n")
 
-            # Estimate duration for progress scaling during Pass 1
+            # --- Assemble & mux ---
             expected_duration = self.get_estimated_duration()
             self._log(f"[Slideshow] Estimated duration for progress scaling: {expected_duration:.2f}s")
-
-            # Split assembly half: Pass1 40%, Pass2 50%, Pass3 10% (sums to 100% of assembly region)
-            pass1_span = int(assembly_weight * 0.40)
-            pass2_span = int(assembly_weight * 0.50)
-            pass3_span = assembly_weight - pass1_span - pass2_span
-            assembly_base = processing_weight
-
 
             # --- Pass 1: Assemble video-only ---
             self._log(f"\n[Slideshow] Assembling video-only...")
@@ -233,7 +227,7 @@ class Slideshow:
                 "-movflags", "+faststart", "-progress", "pipe:1",
                 str(self.video_only),
             ]
-            self._run_ffmpeg_progress(cmd_pass1, 
+            self._run_ffmpeg_progress(cmd_pass1,
                                     expected_duration or 1.0,
                                     base_offset=processing_weight,
                                     span_steps=int(assembly_weight * 0.4),
@@ -300,7 +294,3 @@ class Slideshow:
                 self._log(f"[Slideshow] Cleaning working dir: {self.working_dir}")
                 shutil.rmtree(self.working_dir, ignore_errors=True)
 
-    def set_transition_type(self, transition_type: str):
-        """Update the transition type in the configuration."""
-        self.config["transition_type"] = transition_type
-        self._log(f"[Slideshow] Transition type updated to: {transition_type}")

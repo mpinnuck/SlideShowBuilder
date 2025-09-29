@@ -1,7 +1,5 @@
 from pathlib import Path
 import cv2
-import numpy as np
-from PIL import Image
 from slideshow.config import DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.utils import load_and_resize_image
@@ -13,15 +11,9 @@ class PhotoSlide(SlideItem):
         super().__init__(path, duration, resolution)
         self.fps = fps if fps is not None else DEFAULT_CONFIG["fps"]
 
-    def _load_image(self, close: bool):
-        """
-        For photos, open/close image is identical — simply load and resize.
-        close=True is ignored.
-        """
-        return load_and_resize_image(self.path, self.resolution)
-
-    def render(self, output_path: Path, log_callback=None, progress_callback=None):
+    def render(self, working_dir: Path, log_callback=None, progress_callback=None):
         """Render the photo slide into a CFR (constant frame rate) video clip."""
+        clip_path = super().render(working_dir, log_callback, progress_callback)
         if log_callback:
             log_callback(f"[Slideshow] Rendering photo: {self.path.name} ({self.duration:.2f}s, {self.fps} fps)")
 
@@ -30,12 +22,13 @@ class PhotoSlide(SlideItem):
             raise RuntimeError(f"Cannot load image: {self.path}")
 
         h, w = img.shape[:2]
+        target_w, target_h = self.resolution
+
         if log_callback:
-            log_callback(f"Rendering photo slide: {self.path} -> {output_path}\n"
-                         f"Original size: {w}x{h}, Target: {self.resolution[0]}x{self.resolution[1]}")
+            log_callback(f"Rendering photo slide: {self.path} -> {clip_path}\n"
+                         f"Original size: {w}x{h}, Target: {target_w}x{target_h}")
 
         # --- Resize and pad ---
-        target_w, target_h = self.resolution
         scale = min(target_w / w, target_h / h)
         new_w, new_h = int(w * scale), int(h * scale)
         resized = cv2.resize(img, (new_w, new_h))
@@ -46,9 +39,9 @@ class PhotoSlide(SlideItem):
         right = target_w - new_w - left
         framed = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-        # --- Write video using CFR ---
+        # --- Write CFR video ---
         fourcc = cv2.VideoWriter_fourcc(*'avc1')
-        out = cv2.VideoWriter(str(output_path), fourcc, self.fps, (target_w, target_h))
+        out = cv2.VideoWriter(str(clip_path), fourcc, self.fps, (target_w, target_h))
         total_frames = int(self.fps * self.duration)
 
         for i in range(total_frames):
@@ -59,7 +52,10 @@ class PhotoSlide(SlideItem):
         out.release()
 
         if log_callback:
-            log_callback(f"Photo slide rendered successfully: {output_path} ({total_frames} frames @ {self.fps} fps)")
+            log_callback(f"Photo slide rendered successfully: {clip_path} ({total_frames} frames @ {self.fps} fps)")
+
+        return clip_path
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(path={self.path}, duration={self.duration}, fps={self.fps}, resolution={self.resolution})"
+        return (f"{self.__class__.__name__}(path={self.path}, duration={self.duration}, "
+                f"fps={self.fps}, resolution={self.resolution})")

@@ -1,8 +1,7 @@
+# slideshow/transitions/base_transition.py
 from pathlib import Path
 from abc import ABC, abstractmethod
 import subprocess
-from slideshow.slides.slide_item import SlideItem
-
 
 class BaseTransition(ABC):
     """Base class for all slideshow transitions (SlideItem-based)."""
@@ -13,29 +12,23 @@ class BaseTransition(ABC):
         self.description = "Abstract base transition class"
 
     @abstractmethod
-    def render(self, from_clip: Path, to_clip: Path, output_path: Path):
+    def render(self, from_slide, to_slide, output_path: Path):
         """
-        Render the transition between two SlideItem objects.
+        Render the transition between two **rendered slides**.
 
         Args:
-            from_slide: SlideItem representing the previous slide
-            to_slide: SlideItem representing the next slide
+            from_slide: SlideItem with ._rendered_clip set by render()
+            to_slide: SlideItem with ._rendered_clip set by render()
             output_path: Path where the transition video should be saved
         """
-        pass
+        raise NotImplementedError("Subclasses must implement render()")
 
     def get_requirements(self) -> list:
-        """
-        Return list of required dependencies for this transition.
-        Subclasses can override to specify e.g. ['ffmpeg', 'numpy'].
-        """
+        """Return list of required dependencies for this transition."""
         return []
 
     def is_available(self) -> bool:
-        """
-        Check if this transition can be used (all dependencies available).
-        Maps 'Pillow' to 'PIL' for import since Pillow installs under PIL.
-        """
+        """Check if this transition can be used (all dependencies available)."""
         try:
             for requirement in self.get_requirements():
                 if requirement == "ffmpeg":
@@ -57,12 +50,8 @@ class BaseTransition(ABC):
             print("[Transition] ffmpeg not found in PATH")
         return False
 
-
     def ensure_output_dir(self, output_path: Path):
-        """
-        Convenience helper to ensure output directory exists.
-        Can be used by subclasses before writing the transition video.
-        """
+        """Ensure output directory exists before writing the transition video."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
     def __str__(self):

@@ -61,8 +61,11 @@ def extract_frame(video_path, last=False):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-#def load_and_resize_image(image_or_path, target_size=(1920, 1080)):
-    """Load an image or use PIL.Image and resize with letter/pillarboxing."""
+def load_and_resize_image(image_or_path, target_size=(1920, 1080)):
+    """
+    Load an image (path or PIL.Image) and resize with letter/pillarboxing
+    to exactly match the target resolution.
+    """
     img = image_or_path if isinstance(image_or_path, Image.Image) else Image.open(image_or_path).convert("RGB")
     original_width, original_height = img.size
     target_width, target_height = target_size
@@ -70,42 +73,21 @@ def extract_frame(video_path, last=False):
     orig_aspect = original_width / original_height
     target_aspect = target_width / target_height
 
-    if abs(orig_aspect - target_aspect) < 0.01:
-        return img.resize(target_size, Image.LANCZOS)
-
+    # Create blank canvas at target resolution
     canvas = Image.new("RGB", target_size, (0, 0, 0))
+
     if orig_aspect > target_aspect:
+        # Image is wider than target: fit width, adjust height
         new_width = target_width
         new_height = int(target_width / orig_aspect)
         x_offset, y_offset = 0, (target_height - new_height) // 2
     else:
+        # Image is taller (or equal aspect): fit height, adjust width
         new_height = target_height
         new_width = int(target_height * orig_aspect)
         x_offset, y_offset = (target_width - new_width) // 2, 0
 
     resized = img.resize((new_width, new_height), Image.LANCZOS)
-    canvas.paste(resized, (x_offset, y_offset))
-    return canvas
-
-def load_and_resize_image(image_or_path, target_size=(1920, 1080), letterbox=True):
-    """Load an image and resize with optional letter/pillarboxing to match target_size exactly."""
-    from PIL import Image
-    img = image_or_path if isinstance(image_or_path, Image.Image) else Image.open(image_or_path).convert("RGB")
-    original_width, original_height = img.size
-    target_width, target_height = target_size
-
-    # Maintain aspect ratio by scaling to fit
-    scale = min(target_width / original_width, target_height / original_height)
-    new_width, new_height = int(original_width * scale), int(original_height * scale)
-    resized = img.resize((new_width, new_height), Image.LANCZOS)
-
-    if not letterbox:
-        return resized  # Natural size, just scaled to fit
-
-    # Letterbox/pillarbox to fill target canvas
-    canvas = Image.new("RGB", target_size, (0, 0, 0))
-    x_offset = (target_width - new_width) // 2
-    y_offset = (target_height - new_height) // 2
     canvas.paste(resized, (x_offset, y_offset))
     return canvas
 

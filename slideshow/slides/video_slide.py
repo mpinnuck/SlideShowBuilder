@@ -2,7 +2,6 @@ from pathlib import Path
 import subprocess
 from slideshow.config import DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
-from slideshow.transitions.utils import extract_frame, load_and_resize_image
 
 
 class VideoSlide(SlideItem):
@@ -11,22 +10,12 @@ class VideoSlide(SlideItem):
         super().__init__(path, duration, resolution)
         self.fps = fps if fps is not None else DEFAULT_CONFIG["fps"]
 
-    def _load_image(self, close: bool):
-        """
-        Extract and resize either the first or last frame of the video.
-        close=False → first frame (open)
-        close=True → last frame (close)
-        """
-        frame = extract_frame(self.path, last=close)
-        return load_and_resize_image(frame, self.resolution)
+    def render(self, working_dir: Path, log_callback=None, progress_callback=None):
+        clip_path = super().render(working_dir, log_callback, progress_callback)
 
-    def render(self, output_path: Path, log_callback=None, progress_callback=None):
-        """Render this video clip into CFR video with proper scaling/padding."""
         if log_callback:
-            log_callback(
-                f"[Slideshow] Rendering video slide: {self.path.name} "
-                f"(target={self.duration:.2f}s, output={output_path})"
-            )
+            log_callback(f"[Slideshow] Rendering video slide: {self.path.name} "
+                         f"(target={self.duration:.2f}s, output={clip_path})")
 
         ffmpeg_cmd = [
             "ffmpeg", "-y",
@@ -43,7 +32,7 @@ class VideoSlide(SlideItem):
             "-c:a", "aac",
             "-shortest",
             "-movflags", "+faststart",
-            str(output_path)
+            str(clip_path)
         ]
 
         if log_callback:
@@ -54,8 +43,10 @@ class VideoSlide(SlideItem):
             raise RuntimeError(f"FFmpeg failed for {self.path}:\n{process.stderr}")
 
         if log_callback:
-            log_callback(f"Video slide rendered successfully: {output_path}")
+            log_callback(f"Video slide rendered successfully: {clip_path}")
+
+        return clip_path
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(path={self.path}, duration={self.duration}, fps={self.fps}, resolution={self.resolution})"
-    
+        return (f"{self.__class__.__name__}(path={self.path}, duration={self.duration}, "
+                f"fps={self.fps}, resolution={self.resolution})")
