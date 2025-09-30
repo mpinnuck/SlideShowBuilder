@@ -201,7 +201,8 @@ class Slideshow:
             # --- Render Intro Title (before slides) ---
             intro = IntroTitle()
             self._intro_clip = None
-            if False: #intro.enabled and self.slides:
+#            if False: #intro.enabled and self.slides:
+            if intro.enabled and self.slides:
                 first_slide = self.slides[0]
                 first_frame = first_slide.get_from_image()
                 intro_path = self.working_dir / "intro_title.mp4"

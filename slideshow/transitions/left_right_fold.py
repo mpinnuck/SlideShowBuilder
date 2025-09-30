@@ -19,6 +19,24 @@ class LeftRightFold(OrigamiFrameTransition):
         """Return required dependencies so controller can verify them before running."""
         return ["moderngl", "pillow", "numpy", "ffmpeg"]
 
+    def render_frames(self, from_img, to_img):
+        """
+        Shared rendering logic for left/right folds.
+        Subclasses set `direction` to "left" or "right".
+        """
+        ctx = moderngl.create_context(standalone=True)
+        try:
+            total_frames = int(self.fps * self.duration)
+            phase1_frames = max(1, int(total_frames * 0.55))
+            phase2_frames = total_frames - phase1_frames
+
+            phase1 = self.render_phase1_frames(ctx, from_img, to_img, num_frames=phase1_frames)
+            phase2 = self.render_phase2_frames(ctx, from_img, to_img, num_frames=phase2_frames)
+
+            return phase1 + phase2
+        finally:
+            ctx.release()
+
     # ---- PHASE 1 RENDERER ----
     def render_phase1_frames(self, ctx, from_img, to_img, num_frames=60):
         """
