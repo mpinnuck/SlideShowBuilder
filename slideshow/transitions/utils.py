@@ -104,24 +104,3 @@ def save_frames_as_video(frames, output_path, fps=25):
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", str(output_path)
         ]
         subprocess.run(cmd, check=True)
-
-
-def generate_full_screen_mesh(segments=20):
-    """Generate a full-screen mesh for OpenGL rendering."""
-    vertices, tex_coords, indices = [], [], []
-    for y in range(segments + 1):
-        for x in range(segments + 1):
-            u, v = x / segments, y / segments
-            world_x = (u - 0.5) * 2.0
-            world_y = (v - 0.5) * 2.0
-            vertices.extend([world_x, world_y, 0.0])
-            tex_coords.extend([u, 1.0 - v])
-            if x < segments and y < segments:
-                tl = y * (segments + 1) + x
-                tr = tl + 1
-                bl = (y + 1) * (segments + 1) + x
-                br = bl + 1
-                indices.extend([tl, bl, tr, tr, bl, br])
-    return (np.array(vertices, np.float32),
-            np.array(tex_coords, np.float32),
-            np.array(indices, np.uint32))

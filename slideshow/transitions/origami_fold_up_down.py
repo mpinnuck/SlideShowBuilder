@@ -4,6 +4,9 @@ import numpy as np
 import moderngl
 from slideshow.transitions.origami_frame_transition import OrigamiFrameTransition
 from slideshow.transitions.origami_render import generate_full_screen_mesh
+from slideshow.transitions.origami_render import generate_full_screen_mesh_y
+
+
 
 
 class UpDownFold(OrigamiFrameTransition):
@@ -95,111 +98,131 @@ class UpDownFold(OrigamiFrameTransition):
         """
 
     # ---- Phase 2: unfold remaining half of to_img ----
+    # ---- Phase 2: unfold remaining half of to_img ----
+    # ---- Phase 2: unfold remaining half of to_img ----
+
     def render_phase2_frames(self, ctx, from_img, to_img, num_frames=45):
+        """
+        Phase 2 for Up/Down folds.
+        - Up: fold TOP half of to_img downward from seam
+        - Down: fold BOTTOM half of to_img upward from seam
+        """
+        import numpy as np
+        from slideshow.transitions.origami_render import generate_full_screen_mesh_y
+
         width, height = to_img.size
         from_array, to_array = np.array(from_img), np.array(to_img)
-        mid_y = height // 2
+        mid = height // 2
 
-        composite_array = np.zeros_like(to_array)
+        # --- Background = Phase 1 result ---
         if self.direction == "up":
-            composite_array[:mid_y, :] = to_array[:mid_y, :]
-            composite_array[mid_y:, :] = from_array[mid_y:, :]
-            y_min, y_max = 0.0, 1.0
-            discard_test = "if (uv.y < 0.5) discard;"
-            pos_expr = "pos.y = pos.y * cos(angle); pos.z = pos.y * sin(angle);"
-        else:
-            composite_array[:mid_y, :] = from_array[:mid_y, :]
-            composite_array[mid_y:, :] = to_array[mid_y:, :]
-            y_min, y_max = -1.0, 0.0
-            discard_test = "if (uv.y > 0.5) discard;"
-            pos_expr = "pos.y = pos.y * cos(angle); pos.z = -pos.y * sin(angle);"
+            composite = from_array.copy()
+            composite[mid:, :] = to_array[mid:, :]  # bottom already revealed
+            y_min, y_max = 0.0, 1.0                  # top half of mesh
+            discard_test = "if (uv.y >= 0.5) discard;"  # keep top half of to_img
+            pos_expr = (
+                # Rotate downward toward center (y=0 seam)
+                "float d = abs(pos.y);"
+                "pos.y = d * cos(angle);"      # move y toward 0
+                "pos.z = d * sin(angle);"
+            )
+        else:  # down
+            composite = from_array.copy()
+            composite[:mid, :] = to_array[:mid, :]  # top already revealed
+            y_min, y_max = -1.0, 0.0                 # bottom half of mesh
+            discard_test = "if (uv.y <= 0.5) discard;"  # keep bottom half of to_img
+            pos_expr = (
+                # Rotate upward toward center (y=0 seam)
+                "float d = abs(pos.y);"
+                "pos.y = -d * cos(angle);"
+                "pos.z = d * sin(angle);"
+            )
 
-        composite_texture = ctx.texture((width, height), 3, composite_array.tobytes())
-        to_texture = ctx.texture(to_img.size, 3, to_array.tobytes())
+        # Create textures
+        composite_tex = ctx.texture((width, height), 3, composite.tobytes())
+        to_tex = ctx.texture(to_img.size, 3, to_array.tobytes())
+
+        # Framebuffer
         fbo = ctx.framebuffer(color_attachments=[ctx.texture((width, height), 3)])
         fbo.use()
 
-        # fullscreen quad for background
-        fullscreen_vertices = np.array([-1,-1,0,  1,-1,0,  1,1,0,  -1,1,0], np.float32)
-        fullscreen_uvs = np.array([0,1,  1,1,  1,0,  0,0], np.float32)
-        fullscreen_idx = np.array([0,1,2,  0,2,3], np.uint32)
-
+        # Full background quad
+        fs_v = np.array([-1,-1,0,  1,-1,0,  1, 1,0,  -1, 1,0], np.float32)
+        fs_uv= np.array([ 0, 1,    1, 1,    1, 0,     0, 0  ], np.float32)
+        fs_ix= np.array([0,1,2, 0,2,3], np.uint32)
         bg_prog = ctx.program(
             vertex_shader="""
             #version 330
-            in vec3 in_position;
-            in vec2 in_texcoord;
+            in vec3 in_position; in vec2 in_texcoord;
             out vec2 uv;
-            void main() {
-                uv = in_texcoord;
-                gl_Position = vec4(in_position, 1.0);
-            }
+            void main(){ uv = in_texcoord; gl_Position = vec4(in_position,1.0); }
             """,
             fragment_shader="""
             #version 330
-            in vec2 uv;
-            out vec4 fragColor;
+            in vec2 uv; out vec4 fragColor;
             uniform sampler2D bg;
-            void main() { fragColor = texture(bg, uv); }
+            void main(){ fragColor = texture(bg, uv); }
             """
         )
         bg_vao = ctx.vertex_array(bg_prog, [
-            (ctx.buffer(fullscreen_vertices.tobytes()), '3f', 'in_position'),
-            (ctx.buffer(fullscreen_uvs.tobytes()), '2f', 'in_texcoord')
-        ], ctx.buffer(fullscreen_idx.tobytes()))
+            (ctx.buffer(fs_v.tobytes()), '3f', 'in_position'),
+            (ctx.buffer(fs_uv.tobytes()), '2f', 'in_texcoord')
+        ], ctx.buffer(fs_ix.tobytes()))
 
-        # half-mesh for fold
-        vertices, tex_coords, indices = generate_full_screen_mesh(20, y_min, y_max)
+        # Half-mesh for fold
+        verts, uvs, idx = generate_full_screen_mesh_y(segments=20, y_min=y_min, y_max=y_max)
         fold_prog = ctx.program(
             vertex_shader=f"""
             #version 330
-            in vec3 in_position;
-            in vec2 in_texcoord;
+            in vec3 in_position; in vec2 in_texcoord;
             out vec2 uv;
             uniform float fold_progress;
-            void main() {{
+            void main(){{
                 uv = in_texcoord;
                 vec3 pos = in_position;
-                float angle = (1.0 - fold_progress) * 1.57079;
+                float angle = (1.0 - fold_progress) * 1.57079; // 90° -> 0°
                 {pos_expr}
                 gl_Position = vec4(pos.x, pos.y, -pos.z * 0.1, 1.0);
             }}
             """,
             fragment_shader=f"""
             #version 330
-            in vec2 uv;
-            out vec4 fragColor;
+            in vec2 uv; out vec4 fragColor;
             uniform sampler2D tex;
-            void main() {{
+            void main(){{
                 {discard_test}
                 fragColor = texture(tex, uv);
             }}
             """
         )
         fold_vao = ctx.vertex_array(fold_prog, [
-            (ctx.buffer(vertices.tobytes()), '3f', 'in_position'),
-            (ctx.buffer(tex_coords.tobytes()), '2f', 'in_texcoord')
-        ], ctx.buffer(indices.tobytes()))
+            (ctx.buffer(verts.tobytes()), '3f', 'in_position'),
+            (ctx.buffer(uvs.tobytes()), '2f', 'in_texcoord')
+        ], ctx.buffer(idx.tobytes()))
 
+        # Render loop
         frames = []
         for i in range(num_frames):
-            progress = min(i / (num_frames - 1), 0.99)
+            progress = min(i / max(num_frames - 1, 1), 0.99)
             ctx.clear(0, 0, 0, 1)
+            ctx.disable(moderngl.DEPTH_TEST)
 
-            composite_texture.use(0)
+            composite_tex.use(0)
             bg_prog['bg'] = 0
             bg_vao.render()
 
             fold_prog['fold_progress'] = progress
-            to_texture.use(0)
+            to_tex.use(0)
             fold_prog['tex'] = 0
             fold_vao.render()
 
-            frame_array = np.flipud(
+            frame = np.flipud(
                 np.frombuffer(fbo.read(), np.uint8).reshape((height, width, 3))
             )
-            frames.append(frame_array.copy())
+            frames.append(frame.copy())
+
         return frames
+        
 
     def __repr__(self):
         return f"<UpDownFold direction={self.direction} duration={self.duration}s fps={self.fps}>"

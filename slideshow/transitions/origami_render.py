@@ -7,7 +7,6 @@ that works for both left and right horizontal folds.
 
 import numpy as np
 import moderngl
-
 # ---------- MESH GENERATOR ----------
 
 def generate_full_screen_mesh(segments=20, x_min=-1.0, x_max=1.0):
@@ -33,3 +32,30 @@ def generate_full_screen_mesh(segments=20, x_min=-1.0, x_max=1.0):
             np.array(tex_coords, np.float32),
             np.array(indices, np.uint32))
 
+def generate_full_screen_mesh_y(segments=20, y_min=-1.0, y_max=1.0):
+    """
+    Generate vertices/indices for a mesh spanning y_min..y_max in NDC.
+    This is the vertical equivalent of generate_full_screen_mesh (x-based).
+    """
+    vertices, tex_coords, indices = [], [], []
+    y_start = int((y_min + 1) / 2 * segments)
+    y_end = int((y_max + 1) / 2 * segments)
+
+    for y in range(y_start, y_end + 1):
+        for x in range(segments + 1):
+            u = x / segments
+            v = y / segments
+            vertices.extend([(u - 0.5) * 2.0, (v - 0.5) * 2.0, 0.0])
+            tex_coords.extend([u, 1.0 - v])
+    row_vertices = segments + 1
+    rows = y_end - y_start + 1
+    for y in range(rows - 1):
+        for x in range(segments):
+            tl = y * row_vertices + x
+            tr = tl + 1
+            bl = (y + 1) * row_vertices + x
+            br = bl + 1
+            indices.extend([tl, bl, tr, tr, bl, br])
+    return (np.array(vertices, np.float32),
+            np.array(tex_coords, np.float32),
+            np.array(indices, np.uint32))
