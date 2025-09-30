@@ -1,4 +1,5 @@
-# slideshow/transitions/left_right_fold.py
+# slideshow/transitions/origami_fold_left_right.py
+
 import numpy as np
 import moderngl
 from slideshow.transitions.origami_frame_transition import OrigamiFrameTransition
@@ -16,15 +17,10 @@ class LeftRightFold(OrigamiFrameTransition):
         self.direction = direction  # "left" or "right"
 
     def get_requirements(self):
-        """Return required dependencies so controller can verify them before running."""
         return ["moderngl", "pillow", "numpy", "ffmpeg"]
 
-    # ---- PHASE 1 RENDERER ----
+    # ---- Phase 1: fold left/right half of from_img forward ----
     def render_phase1_frames(self, ctx, from_img, to_img, num_frames=60):
-        """
-        Render Phase 1: Fold either left or right half of `from_img`
-        forward, revealing the corresponding half of `to_img`.
-        """
         width, height = from_img.size
         fbo = ctx.framebuffer(color_attachments=[ctx.texture((width, height), 3)])
         fbo.use()
@@ -98,11 +94,8 @@ class LeftRightFold(OrigamiFrameTransition):
         void main() { fragColor = texture(tex, uv); }
         """
 
-    # ---- PHASE 2 RENDERER ----
+    # ---- Phase 2: unfold remaining half of to_img ----
     def render_phase2_frames(self, ctx, from_img, to_img, num_frames=45):
-        """
-        Render Phase 2: Unfold remaining half to fully reveal `to_img`.
-        """
         width, height = to_img.size
         from_array, to_array = np.array(from_img), np.array(to_img)
         mid_x = width // 2
@@ -126,7 +119,7 @@ class LeftRightFold(OrigamiFrameTransition):
         fbo = ctx.framebuffer(color_attachments=[ctx.texture((width, height), 3)])
         fbo.use()
 
-        # ---- Fullscreen quad for background ----
+        # fullscreen quad for background
         fullscreen_vertices = np.array([-1,-1,0,  1,-1,0,  1,1,0,  -1,1,0], np.float32)
         fullscreen_uvs = np.array([0,1,  1,1,  1,0,  0,0], np.float32)
         fullscreen_idx = np.array([0,1,2,  0,2,3], np.uint32)
@@ -155,7 +148,7 @@ class LeftRightFold(OrigamiFrameTransition):
             (ctx.buffer(fullscreen_uvs.tobytes()), '2f', 'in_texcoord')
         ], ctx.buffer(fullscreen_idx.tobytes()))
 
-        # ---- Half-mesh for fold ----
+        # half-mesh for fold
         vertices, tex_coords, indices = generate_full_screen_mesh(20, x_min, x_max)
         fold_prog = ctx.program(
             vertex_shader=f"""
@@ -192,7 +185,6 @@ class LeftRightFold(OrigamiFrameTransition):
         for i in range(num_frames):
             progress = min(i / (num_frames - 1), 0.99)
             ctx.clear(0, 0, 0, 1)
-            ctx.disable(moderngl.DEPTH_TEST)
 
             composite_texture.use(0)
             bg_prog['bg'] = 0
@@ -211,3 +203,13 @@ class LeftRightFold(OrigamiFrameTransition):
 
     def __repr__(self):
         return f"<LeftRightFold direction={self.direction} duration={self.duration}s fps={self.fps}>"
+
+
+class OrigamiFoldLeft(LeftRightFold):
+    def __init__(self, **kwargs):
+        super().__init__(direction="left", **kwargs)
+
+
+class OrigamiFoldRight(LeftRightFold):
+    def __init__(self, **kwargs):
+        super().__init__(direction="right", **kwargs)
