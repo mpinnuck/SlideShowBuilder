@@ -1,5 +1,5 @@
 # slideshow/transitions/origami_fold_up_down.py
-
+import math
 import numpy as np
 import moderngl
 from slideshow.transitions.origami_frame_transition import OrigamiFrameTransition
@@ -232,7 +232,131 @@ class OrigamiFoldUp(UpDownFold):
     def __init__(self, **kwargs):
         super().__init__(direction="up", **kwargs)
 
+# in slideshow/transitions/origami_fold_up_down.py
 
 class OrigamiFoldDown(UpDownFold):
     def __init__(self, **kwargs):
         super().__init__(direction="down", **kwargs)
+
+    def render_phase2_frames(self, ctx, from_img, to_img, num_frames=45):
+        """
+        Let the base class do the normal downward phase-2 fold,
+        then append a short damped wobble of the *bottom* flap
+        with no artificial shading (Option 1).
+        """
+        import math
+        frames = super().render_phase2_frames(ctx, from_img, to_img, num_frames)
+
+        # ---- Setup GL resources for wobble pass ----
+        width, height = to_img.size
+        to_array = np.array(to_img)
+        to_tex = ctx.texture(to_img.size, 3, to_array.tobytes())
+
+        # Fullscreen quad (background)
+        fs_v = np.array([-1,-1,0,  1,-1,0,  1,1,0,  -1,1,0], np.float32)
+        fs_uv = np.array([0,1,  1,1,  1,0,  0,0], np.float32)
+        fs_idx = np.array([0,1,2,  0,2,3], np.uint32)
+
+        bg_prog = ctx.program(
+            vertex_shader="""
+            #version 330
+            in vec3 in_position;
+            in vec2 in_texcoord;
+            out vec2 uv;
+            void main() {
+                uv = in_texcoord;
+                gl_Position = vec4(in_position, 1.0);
+            }
+            """,
+            fragment_shader="""
+            #version 330
+            in vec2 uv;
+            out vec4 fragColor;
+            uniform sampler2D tex;
+            void main() { fragColor = texture(tex, uv); }
+            """
+        )
+        bg_vao = ctx.vertex_array(
+            bg_prog,
+            [
+                (ctx.buffer(fs_v.tobytes()),  '3f', 'in_position'),
+                (ctx.buffer(fs_uv.tobytes()), '2f', 'in_texcoord'),
+            ],
+            ctx.buffer(fs_idx.tobytes())
+        )
+
+        # Bottom-half mesh: world Y in [-1, 0] (seam is y=0)
+        from slideshow.transitions.origami_render import generate_full_screen_mesh_y
+        vtx, uv, idx = generate_full_screen_mesh_y(segments=20, y_min=-1.0, y_max=0.0)
+
+        wobble_prog = ctx.program(
+            vertex_shader="""
+            #version 330
+            in vec3 in_position;
+            in vec2 in_texcoord;
+            out vec2 uv;
+            uniform float wobble_angle;
+            void main() {
+                uv = in_texcoord;
+                vec3 pos = in_position;
+
+                // rotate around x-axis at seam (y=0)
+                float oy = pos.y;
+                float oz = pos.z;
+                pos.y = oy * cos(wobble_angle) - oz * sin(wobble_angle);
+                pos.z = oy * sin(wobble_angle) + oz * cos(wobble_angle);
+
+                gl_Position = vec4(pos.x, pos.y, -pos.z * 0.1, 1.0);
+            }
+            """,
+            fragment_shader="""
+            #version 330
+            in vec2 uv;
+            out vec4 fragColor;
+            uniform sampler2D tex;
+
+            void main() {
+                // No artificial shading – texture only
+                fragColor = texture(tex, uv);
+            }
+            """
+        )
+        wobble_vao = ctx.vertex_array(
+            wobble_prog,
+            [
+                (ctx.buffer(vtx.tobytes()), '3f', 'in_position'),
+                (ctx.buffer(uv.tobytes()),  '2f', 'in_texcoord'),
+            ],
+            ctx.buffer(idx.tobytes())
+        )
+
+        fbo = ctx.framebuffer(color_attachments=[ctx.texture((width, height), 3)])
+        fbo.use()
+
+        # ---- Wobble envelope ----
+        wobble_frames = max(1, int(self.fps * 1.0))   # ~1 second
+        amp   = 0.7                                    # ~40° swing
+        decay = 1.2                                    # damping
+        freq  = 1.2                                    # wobble frequency
+
+        for j in range(wobble_frames):
+            t = j / float(wobble_frames)
+            angle = amp * math.sin(freq * 2 * math.pi * t) * math.exp(-decay * t)
+
+            # clear and draw background
+            ctx.clear(0, 0, 0, 1)
+            to_tex.use(0)
+            bg_prog['tex'] = 0
+            bg_vao.render()
+
+            # draw bottom flap with wobble
+            wobble_prog['wobble_angle'] = angle
+            to_tex.use(0)
+            wobble_vao.render()
+
+            frame = np.flipud(
+                np.frombuffer(fbo.read(), np.uint8).reshape((height, width, 3))
+            )
+            frames.append(frame.copy())
+
+        return frames
