@@ -3,7 +3,7 @@ import math
 import numpy as np
 import moderngl
 from slideshow.transitions.origami_frame_transition import OrigamiFrameTransition
-from slideshow.transitions.origami_render import generate_full_screen_mesh
+from slideshow.transitions.origami_render import generate_full_screen_mesh_x
 from slideshow.transitions.origami_render import generate_full_screen_mesh_y
 
 
@@ -29,7 +29,7 @@ class UpDownFold(OrigamiFrameTransition):
         fbo.use()
         ctx.enable(moderngl.DEPTH_TEST)
 
-        vertices, tex_coords, indices = generate_full_screen_mesh()
+        vertices, tex_coords, indices = generate_full_screen_mesh_x()
         vshader = self._phase1_vertex_shader()
         fshader = self._phase1_fragment_shader()
         program = ctx.program(vertex_shader=vshader, fragment_shader=fshader)

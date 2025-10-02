@@ -239,7 +239,7 @@ class Slideshow:
             self._log(f"[Slideshow] Estimated duration for progress scaling: {expected_duration:.2f}s")
 
             # --- Pass 1: Assemble video-only ---
-            self._log(f"\n[Slideshow] Assembling video-only...")
+            self._log(f"[Slideshow] Assembling video-only...")
             cmd_pass1 = [
                 "ffmpeg", "-y",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),

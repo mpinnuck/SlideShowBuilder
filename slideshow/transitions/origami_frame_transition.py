@@ -1,4 +1,9 @@
 # slideshow/transitions/origami_frame_transition.py
+"""
+Note: This base class is only for two-phase origami folds (start fold + finish fold).
+If your transition doesn’t fit this structure (e.g. center folds with wobble),
+subclass BaseTransition directly instead.
+"""
 import moderngl
 from abc import ABC, abstractmethod
 from pathlib import Path

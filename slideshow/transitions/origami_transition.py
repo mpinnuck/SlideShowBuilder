@@ -13,6 +13,7 @@ from pathlib import Path
 from slideshow.transitions.base_transition import BaseTransition
 from slideshow.transitions.origami_fold_left_right import OrigamiFoldLeft, OrigamiFoldRight
 from slideshow.transitions.origami_fold_up_down import OrigamiFoldUp, OrigamiFoldDown
+from slideshow.transitions.origami_fold_center import OrigamiFoldCenterHoriz, OrigamiFoldCenterVert
 
 
 class OrigamiTransition(BaseTransition):
@@ -38,6 +39,8 @@ class OrigamiTransition(BaseTransition):
             "right": OrigamiFoldRight,
             "up": OrigamiFoldUp,
             "down": OrigamiFoldDown,
+            "centerhoriz": OrigamiFoldCenterHoriz,
+            "centervert": OrigamiFoldCenterVert,
         }
 
     def get_requirements(self):

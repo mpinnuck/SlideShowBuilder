@@ -3,7 +3,7 @@
 import numpy as np
 import moderngl
 from slideshow.transitions.origami_frame_transition import OrigamiFrameTransition
-from slideshow.transitions.origami_render import generate_full_screen_mesh
+from slideshow.transitions.origami_render import generate_full_screen_mesh_x
 
 
 class LeftRightFold(OrigamiFrameTransition):
@@ -26,7 +26,7 @@ class LeftRightFold(OrigamiFrameTransition):
         fbo.use()
         ctx.enable(moderngl.DEPTH_TEST)
 
-        vertices, tex_coords, indices = generate_full_screen_mesh()
+        vertices, tex_coords, indices = generate_full_screen_mesh_x()
         vshader = self._phase1_vertex_shader()
         fshader = self._phase1_fragment_shader()
         program = ctx.program(vertex_shader=vshader, fragment_shader=fshader)
@@ -91,9 +91,16 @@ class LeftRightFold(OrigamiFrameTransition):
         in vec2 uv;
         out vec4 fragColor;
         uniform sampler2D tex;
-        void main() { fragColor = texture(tex, uv); }
+        void main() {
+            vec4 c = texture(tex, uv);
+            // Discard padded black pixels
+            if (c.r < 0.02 && c.g < 0.02 && c.b < 0.02) {
+                discard;
+            }
+            fragColor = c;
+        }
         """
-
+    
     # ---- Phase 2: unfold remaining half of to_img ----
     def render_phase2_frames(self, ctx, from_img, to_img, num_frames=45):
         width, height = to_img.size
@@ -149,7 +156,7 @@ class LeftRightFold(OrigamiFrameTransition):
         ], ctx.buffer(fullscreen_idx.tobytes()))
 
         # half-mesh for fold
-        vertices, tex_coords, indices = generate_full_screen_mesh(20, x_min, x_max)
+        vertices, tex_coords, indices = generate_full_screen_mesh_x(20, x_min, x_max)
         fold_prog = ctx.program(
             vertex_shader=f"""
             #version 330
@@ -172,7 +179,12 @@ class LeftRightFold(OrigamiFrameTransition):
             uniform sampler2D tex;
             void main() {{
                 {discard_test}
-                fragColor = texture(tex, uv);
+                vec4 c = texture(tex, uv);
+                // Discard padded black pixels
+                if (c.r < 0.02 && c.g < 0.02 && c.b < 0.02) {{
+                    discard;
+                }}
+                fragColor = c;
             }}
             """
         )

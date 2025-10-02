@@ -7,10 +7,10 @@ that works for both left and right horizontal folds.
 
 import numpy as np
 import moderngl
-# ---------- MESH GENERATOR ----------
+# ---------- MESH GENERATORS ----------
 
-def generate_full_screen_mesh(segments=20, x_min=-1.0, x_max=1.0):
-    """Generate vertices/indices for a mesh spanning x_min..x_max in NDC."""
+def generate_full_screen_mesh_x(segments=20, x_min=-1.0, x_max=1.0):
+    """Generate vertices/indices for a mesh spanning x_min..x_max in NDC (for horizontal folds)."""
     vertices, tex_coords, indices = [], [], []
     x_start = int((x_min + 1) / 2 * segments)
     x_end = int((x_max + 1) / 2 * segments)
@@ -34,8 +34,8 @@ def generate_full_screen_mesh(segments=20, x_min=-1.0, x_max=1.0):
 
 def generate_full_screen_mesh_y(segments=20, y_min=-1.0, y_max=1.0):
     """
-    Generate vertices/indices for a mesh spanning y_min..y_max in NDC.
-    This is the vertical equivalent of generate_full_screen_mesh (x-based).
+    Generate vertices/indices for a mesh spanning y_min..y_max in NDC (for vertical folds).
+    This is the vertical equivalent of generate_full_screen_mesh_x (x-based).
     """
     vertices, tex_coords, indices = [], [], []
     y_start = int((y_min + 1) / 2 * segments)
