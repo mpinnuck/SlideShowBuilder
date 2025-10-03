@@ -186,7 +186,7 @@ def draw_fullscreen_image(ctx, tex):
 def render_flap_fold(ctx, from_tex, to_tex, width, height,
                      x_min, x_max, u_min, u_max, seam_x,
                      num_frames, start_angle=0.0, end_angle=np.pi, 
-                     previous_frame=None, easing="quad"):
+                     previous_frame=None, easing="quad", lighting=True):
     """
     Render one flap folding (e.g. Q4→Q3), revealing TO behind the flap only.
     
@@ -200,11 +200,18 @@ def render_flap_fold(ctx, from_tex, to_tex, width, height,
         start_angle, end_angle: Start and end rotation angles in radians
         previous_frame: Result of previous fold to use as background
         easing: Easing function type ("linear", "quad", "cubic", "back")
+        lighting: Enable realistic directional lighting for depth (default: True)
         
     Returns:
         List of rendered frame arrays
     """
     frames = []
+
+    # Lighting parameters for realistic paper-like shading
+    light_direction = np.array([-0.3, -0.5, -0.8], dtype=np.float32)  # Top-left-front light
+    light_direction = light_direction / np.linalg.norm(light_direction)  # Normalize
+    ambient_strength = 0.4  # Base lighting level
+    diffuse_strength = 0.8  # Directional light strength
 
     # Create offscreen framebuffer
     flap_tex = ctx.texture((width, height), 3)
@@ -225,36 +232,106 @@ def render_flap_fold(ctx, from_tex, to_tex, width, height,
     ], np.float32)
     flap_idx = np.array([0,1,2,0,2,3], np.uint32)
 
-    flap_prog = ShaderCache.get_or_create_program(
-        ctx,
-        "flap_fold",
-        vertex_shader="""
-        #version 330
-        in vec3 in_position;
-        in vec2 in_texcoord;
-        out vec2 uv;
-        uniform float angle;
-        uniform float seam_x;
-        void main() {
-            uv = in_texcoord;
-            vec3 pos = in_position;
-            float ox = pos.x - seam_x;
-            float oz = pos.z;
-            pos.x = seam_x + ox * cos(angle) - oz * sin(angle);
-            pos.z = ox * sin(angle) + oz * cos(angle);
-            gl_Position = vec4(pos.x, pos.y, -pos.z * 0.1, 1.0);
-        }
-        """,
-        fragment_shader="""
-        #version 330
-        in vec2 uv;
-        out vec4 fragColor;
-        uniform sampler2D tex;
-        void main() {
-            fragColor = texture(tex, uv);
-        }
-        """
-    )
+    # Select shader based on lighting preference
+    if lighting:
+        flap_prog = ShaderCache.get_or_create_program(
+            ctx,
+            "flap_fold_lit",
+            vertex_shader="""
+            #version 330
+            in vec3 in_position;
+            in vec2 in_texcoord;
+            out vec2 uv;
+            out vec3 world_pos;
+            out vec3 normal;
+            uniform float angle;
+            uniform float seam_x;
+            void main() {
+                uv = in_texcoord;
+                vec3 pos = in_position;
+                float ox = pos.x - seam_x;
+                float oz = pos.z;
+                
+                // Apply fold rotation
+                pos.x = seam_x + ox * cos(angle) - oz * sin(angle);
+                pos.z = ox * sin(angle) + oz * cos(angle);
+                
+                // Calculate normal based on fold angle
+                // For a fold, the normal rotates with the surface
+                vec3 fold_normal = vec3(sin(angle), 0.0, cos(angle));
+                // Blend between flat (0,0,1) and folded normal based on distance from seam
+                float distance_from_seam = abs(ox);
+                normal = normalize(mix(vec3(0.0, 0.0, 1.0), fold_normal, distance_from_seam));
+                
+                world_pos = pos;
+                gl_Position = vec4(pos.x, pos.y, -pos.z * 0.1, 1.0);
+            }
+            """,
+            fragment_shader="""
+            #version 330
+            in vec2 uv;
+            in vec3 world_pos;
+            in vec3 normal;
+            out vec4 fragColor;
+            uniform sampler2D tex;
+            uniform vec3 light_dir;
+            uniform float ambient_strength;
+            uniform float diffuse_strength;
+            void main() {
+                vec3 base_color = texture(tex, uv).rgb;
+                
+                // Normalize normal (interpolated across triangle)
+                vec3 norm = normalize(normal);
+                
+                // Calculate lighting
+                float diff = max(dot(norm, -light_dir), 0.0);
+                vec3 ambient = ambient_strength * base_color;
+                vec3 diffuse = diffuse_strength * diff * base_color;
+                
+                // Combine lighting components
+                vec3 final_color = ambient + diffuse;
+                
+                // Add subtle rim lighting for paper-like effect
+                float rim = 1.0 - max(dot(norm, vec3(0.0, 0.0, 1.0)), 0.0);
+                rim = pow(rim, 2.0) * 0.3;
+                final_color += rim * vec3(1.0, 1.0, 1.0);
+                
+                fragColor = vec4(final_color, 1.0);
+            }
+            """
+        )
+    else:
+        # Use simple unlit shader for backward compatibility
+        flap_prog = ShaderCache.get_or_create_program(
+            ctx,
+            "flap_fold_simple",
+            vertex_shader="""
+            #version 330
+            in vec3 in_position;
+            in vec2 in_texcoord;
+            out vec2 uv;
+            uniform float angle;
+            uniform float seam_x;
+            void main() {
+                uv = in_texcoord;
+                vec3 pos = in_position;
+                float ox = pos.x - seam_x;
+                float oz = pos.z;
+                pos.x = seam_x + ox * cos(angle) - oz * sin(angle);
+                pos.z = ox * sin(angle) + oz * cos(angle);
+                gl_Position = vec4(pos.x, pos.y, -pos.z * 0.1, 1.0);
+            }
+            """,
+            fragment_shader="""
+            #version 330
+            in vec2 uv;
+            out vec4 fragColor;
+            uniform sampler2D tex;
+            void main() {
+                fragColor = texture(tex, uv);
+            }
+            """
+        )
 
     flap_vao = ctx.vertex_array(flap_prog, [
         (ctx.buffer(flap_v.tobytes()), "3f", "in_position"),
@@ -344,11 +421,17 @@ def render_flap_fold(ctx, from_tex, to_tex, width, height,
             reveal_prog['tex'] = 0
             reveal_vao.render()
 
-        # 3️⃣ Draw FROM flap rotating
+        # 3️⃣ Draw FROM flap rotating with lighting
         from_tex.use(0)
         flap_prog['tex'] = 0
         flap_prog['angle'] = angle
         flap_prog['seam_x'] = seam_x
+        
+        if lighting:
+            flap_prog['light_dir'] = tuple(light_direction)
+            flap_prog['ambient_strength'] = ambient_strength
+            flap_prog['diffuse_strength'] = diffuse_strength
+            
         flap_vao.render()
 
         frame = np.flipud(

@@ -20,7 +20,7 @@ from slideshow.transitions.origami_fold_multi_lr import OrigamiFoldMultiLRLeft, 
 
 
 class OrigamiTransition(BaseTransition):
-    def __init__(self, duration=1.0, resolution=(1920, 1080), fps=30, fold=None, easing="quad"):
+    def __init__(self, duration=1.0, resolution=(1920, 1080), fps=30, fold=None, easing="quad", lighting=True):
         """
         Args:
             duration (float): Duration of the transition in seconds.
@@ -31,6 +31,8 @@ class OrigamiTransition(BaseTransition):
                              "multileft", "multiright"). If None, one is chosen randomly.
             easing (str): Easing function for smooth animation ("linear", "quad", "cubic", "back").
                          Default "quad" provides natural acceleration/deceleration.
+            lighting (bool): Enable realistic directional lighting for depth and dimension.
+                            Default True provides paper-like shading effects.
         """
         super().__init__(duration=duration)
         self.name = "Origami"
@@ -39,6 +41,7 @@ class OrigamiTransition(BaseTransition):
         self.fps = fps
         self.fold = fold  # optional forced fold direction
         self.easing = easing  # easing function for smooth animation
+        self.lighting = lighting  # realistic directional lighting
 
         # Mapping of fold direction → transition class
         self.fold_map = {
@@ -63,9 +66,10 @@ class OrigamiTransition(BaseTransition):
         chosen = self.fold or random.choice(list(self.fold_map.keys()))
         cls = self.fold_map[chosen]
         
-        # Pass easing parameter to multi-LR transitions that support it
+        # Pass easing and lighting parameters to multi-LR transitions that support them
         if chosen in ["multileft", "multiright"]:
-            return cls(duration=self.duration, resolution=self.resolution, fps=self.fps, easing=self.easing)
+            return cls(duration=self.duration, resolution=self.resolution, fps=self.fps, 
+                      easing=self.easing, lighting=self.lighting)
         else:
             return cls(duration=self.duration, resolution=self.resolution, fps=self.fps)
 

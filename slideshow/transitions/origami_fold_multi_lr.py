@@ -11,9 +11,10 @@ class OrigamiFoldMultiLR(OrigamiFrameTransition):
     Base class for multi-quarter origami fold transitions.
     Subclasses implement direction-specific folding logic.
     """
-    def __init__(self, easing="quad", **kwargs):
+    def __init__(self, easing="quad", lighting=True, **kwargs):
         super().__init__(**kwargs)
         self.easing = easing  # Easing function: "linear", "quad", "cubic", "back"
+        self.lighting = lighting  # Enable realistic directional lighting for depth
 
     def get_requirements(self):
         return ["moderngl", "numpy", "Pillow", "ffmpeg"]
@@ -61,7 +62,8 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
                                    0.5, 1.0, 0.75, 1.0, seam_x=0.5,
                                    num_frames=per_fold_frames,
                                    previous_frame=previous_frame,
-                                   easing=self.easing)
+                                   easing=self.easing,
+                                   lighting=self.lighting)
         frames += fold1_frames
         previous_frame = fold1_frames[-1] if fold1_frames else previous_frame
 
@@ -71,7 +73,8 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
                                    0.0, 0.5, 0.5, 0.75, seam_x=0.0,
                                    num_frames=per_fold_frames,
                                    previous_frame=previous_frame,
-                                   easing=self.easing)
+                                   easing=self.easing,
+                                   lighting=self.lighting)
         frames += fold2_frames
         previous_frame = fold2_frames[-1] if fold2_frames else previous_frame
 
@@ -81,7 +84,8 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
                                    -0.5, 0.0, 0.25, 0.5, seam_x=-0.5,
                                    num_frames=per_fold_frames,
                                    previous_frame=previous_frame,
-                                   easing=self.easing)
+                                   easing=self.easing,
+                                   lighting=self.lighting)
         frames += fold3_frames
         previous_frame = fold3_frames[-1] if fold3_frames else previous_frame
 
@@ -92,7 +96,8 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
                                    num_frames=per_fold_frames,
                                    start_angle=0.0, end_angle=np.pi/2,
                                    previous_frame=previous_frame,
-                                   easing=self.easing)
+                                   easing=self.easing,
+                                   lighting=self.lighting)
         frames += fold4_frames
 
         return frames
@@ -130,7 +135,8 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
                                    -1.0, -0.5, 0.0, 0.25, seam_x=-0.5,
                                    num_frames=per_fold_frames,
                                    previous_frame=previous_frame,
-                                   easing=self.easing)
+                                   easing=self.easing,
+                                   lighting=self.lighting)
         frames += fold1_frames
         previous_frame = fold1_frames[-1] if fold1_frames else previous_frame
 
@@ -140,7 +146,8 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
                                    -0.5, 0.0, 0.25, 0.5, seam_x=0.0,
                                    num_frames=per_fold_frames,
                                    previous_frame=previous_frame,
-                                   easing=self.easing)
+                                   easing=self.easing,
+                                   lighting=self.lighting)
         frames += fold2_frames
         previous_frame = fold2_frames[-1] if fold2_frames else previous_frame
 
@@ -150,7 +157,8 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
                                    0.0, 0.5, 0.5, 0.75, seam_x=0.5,
                                    num_frames=per_fold_frames,
                                    previous_frame=previous_frame,
-                                   easing=self.easing)
+                                   easing=self.easing,
+                                   lighting=self.lighting)
         frames += fold3_frames
         previous_frame = fold3_frames[-1] if fold3_frames else previous_frame
 
@@ -161,7 +169,8 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
                                    num_frames=per_fold_frames,
                                    start_angle=0.0, end_angle=np.pi/2,
                                    previous_frame=previous_frame,
-                                   easing=self.easing)
+                                   easing=self.easing,
+                                   lighting=self.lighting)
         frames += fold4_frames
 
         return frames
