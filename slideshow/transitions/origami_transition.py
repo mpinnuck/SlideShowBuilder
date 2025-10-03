@@ -15,6 +15,7 @@ from slideshow.transitions.origami_fold_left_right import OrigamiFoldLeft, Origa
 from slideshow.transitions.origami_fold_up_down import OrigamiFoldUp, OrigamiFoldDown
 from slideshow.transitions.origami_fold_center import OrigamiFoldCenterHoriz, OrigamiFoldCenterVert
 from slideshow.transitions.origami_fold_slide import OrigamiFoldSlideLeft, OrigamiFoldSlideRight
+from slideshow.transitions.origami_fold_multi_lr import OrigamiFoldMultiLRLeft, OrigamiFoldMultiLRRight
 
 
 
@@ -25,12 +26,13 @@ class OrigamiTransition(BaseTransition):
             duration (float): Duration of the transition in seconds.
             resolution (tuple): Output resolution (width, height).
             fps (int): Frames per second for rendering.
-            fold (str|None): Force a specific fold direction ("left", "right", "up", "down").
-                             If None, one is chosen randomly.
+            fold (str|None): Force a specific fold direction ("left", "right", "up", "down", 
+                             "centerhoriz", "centervert", "slide_left", "slide_right", 
+                             "multileft", "multiright"). If None, one is chosen randomly.
         """
         super().__init__(duration=duration)
         self.name = "Origami"
-        self.description = "3D paper folding transition with left/right/up/down variations"
+        self.description = "3D paper folding transition with multiple variations: basic (left/right/up/down), center (horiz/vert), slide, and multi-quarter progressive folds"
         self.resolution = resolution
         self.fps = fps
         self.fold = fold  # optional forced fold direction
@@ -45,6 +47,8 @@ class OrigamiTransition(BaseTransition):
             "centervert": OrigamiFoldCenterVert,
             "slide_left": OrigamiFoldSlideLeft,
             "slide_right": OrigamiFoldSlideRight,
+            "multileft": OrigamiFoldMultiLRLeft,
+            "multiright": OrigamiFoldMultiLRRight,
         }
 
     def get_requirements(self):

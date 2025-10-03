@@ -7,6 +7,32 @@ that works for both left and right horizontal folds.
 
 import numpy as np
 import moderngl
+
+
+# ---------- SHADER CACHE ----------
+
+class ShaderCache:
+    """Global shader cache to avoid recompiling shaders across fold operations."""
+    _cache = {}
+    
+    @classmethod
+    def get_or_create_program(cls, ctx, key, vertex_shader, fragment_shader):
+        """Get cached shader program or create and cache new one."""
+        cache_key = (id(ctx), key)
+        if cache_key not in cls._cache:
+            cls._cache[cache_key] = ctx.program(
+                vertex_shader=vertex_shader,
+                fragment_shader=fragment_shader
+            )
+        return cls._cache[cache_key]
+    
+    @classmethod
+    def clear_cache(cls):
+        """Clear shader cache - useful for testing or context changes."""
+        cls._cache.clear()
+
+
+
 # ---------- MESH GENERATORS ----------
 
 def generate_full_screen_mesh_x(segments=20, x_min=-1.0, x_max=1.0):
@@ -59,3 +85,197 @@ def generate_full_screen_mesh_y(segments=20, y_min=-1.0, y_max=1.0):
     return (np.array(vertices, np.float32),
             np.array(tex_coords, np.float32),
             np.array(indices, np.uint32))
+
+
+# ---------- RENDERING UTILITIES ----------
+
+def draw_fullscreen_image(ctx, tex):
+    """Draws a full-frame texture to the current framebuffer."""
+    prog = ShaderCache.get_or_create_program(
+        ctx, 
+        "fullscreen_quad",
+        vertex_shader="""
+        #version 330
+        in vec3 in_position;
+        in vec2 in_texcoord;
+        out vec2 uv;
+        void main() {
+            uv = in_texcoord;
+            gl_Position = vec4(in_position, 1.0);
+        }
+        """,
+        fragment_shader="""
+        #version 330
+        in vec2 uv;
+        out vec4 fragColor;
+        uniform sampler2D tex;
+        void main() {
+            fragColor = texture(tex, uv);
+        }
+        """
+    )
+
+    v = np.array([-1,-1,0,  1,-1,0,  1,1,0, -1,1,0], np.float32)
+    uv = np.array([0,1,  1,1,  1,0,  0,0], np.float32)
+    idx = np.array([0,1,2, 0,2,3], np.uint32)
+
+    vao = ctx.vertex_array(prog, [
+        (ctx.buffer(v.tobytes()), '3f', 'in_position'),
+        (ctx.buffer(uv.tobytes()), '2f', 'in_texcoord')
+    ], ctx.buffer(idx.tobytes()))
+
+    tex.use(0)
+    prog['tex'] = 0
+    vao.render()
+
+
+def render_flap_fold(ctx, from_tex, to_tex, width, height,
+                     x_min, x_max, u_min, u_max, seam_x,
+                     num_frames, start_angle=0.0, end_angle=np.pi, 
+                     previous_frame=None):
+    """
+    Render one flap folding (e.g. Q4→Q3), revealing TO behind the flap only.
+    previous_frame: the result of the previous fold to use as background
+    """
+    frames = []
+
+    # Create offscreen framebuffer
+    flap_tex = ctx.texture((width, height), 3)
+    fbo = ctx.framebuffer(color_attachments=[flap_tex])
+
+    # Prepare flap mesh
+    flap_v = np.array([
+        x_min, -1, 0,
+        x_max, -1, 0,
+        x_max,  1, 0,
+        x_min,  1, 0
+    ], np.float32)
+    flap_uv = np.array([
+        u_min, 1.0,
+        u_max, 1.0,
+        u_max, 0.0,
+        u_min, 0.0
+    ], np.float32)
+    flap_idx = np.array([0,1,2,0,2,3], np.uint32)
+
+    flap_prog = ShaderCache.get_or_create_program(
+        ctx,
+        "flap_fold",
+        vertex_shader="""
+        #version 330
+        in vec3 in_position;
+        in vec2 in_texcoord;
+        out vec2 uv;
+        uniform float angle;
+        uniform float seam_x;
+        void main() {
+            uv = in_texcoord;
+            vec3 pos = in_position;
+            float ox = pos.x - seam_x;
+            float oz = pos.z;
+            pos.x = seam_x + ox * cos(angle) - oz * sin(angle);
+            pos.z = ox * sin(angle) + oz * cos(angle);
+            gl_Position = vec4(pos.x, pos.y, -pos.z * 0.1, 1.0);
+        }
+        """,
+        fragment_shader="""
+        #version 330
+        in vec2 uv;
+        out vec4 fragColor;
+        uniform sampler2D tex;
+        void main() {
+            fragColor = texture(tex, uv);
+        }
+        """
+    )
+
+    flap_vao = ctx.vertex_array(flap_prog, [
+        (ctx.buffer(flap_v.tobytes()), "3f", "in_position"),
+        (ctx.buffer(flap_uv.tobytes()), "2f", "in_texcoord")
+    ], ctx.buffer(flap_idx.tobytes()))
+
+    ctx.disable(moderngl.CULL_FACE)
+
+    # Use previous frame as background, or FROM image for first fold
+    if previous_frame is not None:
+        background_tex = ctx.texture((width, height), 3, previous_frame.tobytes())
+    else:
+        background_tex = from_tex
+
+    for j in range(num_frames):
+        t = j / (num_frames - 1)
+        angle = start_angle + t * (end_angle - start_angle)
+
+        fbo.use()
+        ctx.clear(0, 0, 0, 1)
+
+        # 1️⃣ Draw background (previous fold result or FROM image)
+        background_tex.use(0)
+        draw_fullscreen_image(ctx, background_tex)
+
+        # 2️⃣ Only reveal TO image in the specific area being folded over
+        # Create a quad for just the area being revealed
+        reveal_v = np.array([
+            x_min, -1, 0,
+            x_max, -1, 0, 
+            x_max,  1, 0,
+            x_min,  1, 0
+        ], np.float32)
+        reveal_uv = np.array([
+            u_min, 1.0,
+            u_max, 1.0,
+            u_max, 0.0,
+            u_min, 0.0
+        ], np.float32)
+        reveal_idx = np.array([0,1,2,0,2,3], np.uint32)
+
+        # Simple program for revealing TO image
+        reveal_prog = ShaderCache.get_or_create_program(
+            ctx,
+            "reveal_quad",
+            vertex_shader="""
+            #version 330
+            in vec3 in_position;
+            in vec2 in_texcoord;
+            out vec2 uv;
+            void main() {
+                uv = in_texcoord;
+                gl_Position = vec4(in_position, 1.0);
+            }
+            """,
+            fragment_shader="""
+            #version 330
+            in vec2 uv;
+            out vec4 fragColor;
+            uniform sampler2D tex;
+            void main() {
+                fragColor = texture(tex, uv);
+            }
+            """
+        )
+
+        reveal_vao = ctx.vertex_array(reveal_prog, [
+            (ctx.buffer(reveal_v.tobytes()), "3f", "in_position"),
+            (ctx.buffer(reveal_uv.tobytes()), "2f", "in_texcoord")
+        ], ctx.buffer(reveal_idx.tobytes()))
+
+        # Reveal TO image only in the area being folded over (gradually)
+        reveal_progress = min(1.0, angle / (np.pi/2))  # 0 to 1 as angle goes 0 to 90°
+        if reveal_progress > 0:
+            to_tex.use(0)
+            reveal_prog['tex'] = 0
+            reveal_vao.render()
+
+        # 3️⃣ Draw FROM flap rotating
+        from_tex.use(0)
+        flap_prog['tex'] = 0
+        flap_prog['angle'] = angle
+        flap_prog['seam_x'] = seam_x
+        flap_vao.render()
+
+        frame = np.flipud(
+            np.frombuffer(fbo.read(), np.uint8).reshape((height, width, 3))
+        )
+        frames.append(frame.copy())
+
+    return frames
