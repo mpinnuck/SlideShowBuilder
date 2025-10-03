@@ -20,7 +20,7 @@ from slideshow.transitions.origami_fold_multi_lr import OrigamiFoldMultiLRLeft, 
 
 
 class OrigamiTransition(BaseTransition):
-    def __init__(self, duration=1.0, resolution=(1920, 1080), fps=30, fold=None):
+    def __init__(self, duration=1.0, resolution=(1920, 1080), fps=30, fold=None, easing="quad"):
         """
         Args:
             duration (float): Duration of the transition in seconds.
@@ -29,6 +29,8 @@ class OrigamiTransition(BaseTransition):
             fold (str|None): Force a specific fold direction ("left", "right", "up", "down", 
                              "centerhoriz", "centervert", "slide_left", "slide_right", 
                              "multileft", "multiright"). If None, one is chosen randomly.
+            easing (str): Easing function for smooth animation ("linear", "quad", "cubic", "back").
+                         Default "quad" provides natural acceleration/deceleration.
         """
         super().__init__(duration=duration)
         self.name = "Origami"
@@ -36,6 +38,7 @@ class OrigamiTransition(BaseTransition):
         self.resolution = resolution
         self.fps = fps
         self.fold = fold  # optional forced fold direction
+        self.easing = easing  # easing function for smooth animation
 
         # Mapping of fold direction → transition class
         self.fold_map = {
@@ -59,7 +62,12 @@ class OrigamiTransition(BaseTransition):
         """Pick a fold type based on self.fold or random choice."""
         chosen = self.fold or random.choice(list(self.fold_map.keys()))
         cls = self.fold_map[chosen]
-        return cls(duration=self.duration, resolution=self.resolution, fps=self.fps)
+        
+        # Pass easing parameter to multi-LR transitions that support it
+        if chosen in ["multileft", "multiright"]:
+            return cls(duration=self.duration, resolution=self.resolution, fps=self.fps, easing=self.easing)
+        else:
+            return cls(duration=self.duration, resolution=self.resolution, fps=self.fps)
 
     def render(self, from_slide, to_slide, output_path: Path):
         """

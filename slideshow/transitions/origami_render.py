@@ -32,6 +32,60 @@ class ShaderCache:
         cls._cache.clear()
 
 
+# ---------- EASING FUNCTIONS ----------
+
+def ease_in_out_quad(t):
+    """
+    Quadratic ease-in-out easing function for smooth animation.
+    
+    Args:
+        t: Time parameter between 0.0 and 1.0
+        
+    Returns:
+        Eased value between 0.0 and 1.0
+        
+    Behavior:
+        - Starts slow (ease-in)
+        - Accelerates in the middle
+        - Ends slow (ease-out)
+        - Creates organic, natural motion
+    """
+    if t < 0.5:
+        return 2.0 * t * t
+    else:
+        return 1.0 - 2.0 * (1.0 - t) * (1.0 - t)
+
+def ease_in_out_cubic(t):
+    """
+    Cubic ease-in-out easing function for more pronounced smooth animation.
+    
+    Args:
+        t: Time parameter between 0.0 and 1.0
+        
+    Returns:
+        Eased value between 0.0 and 1.0
+    """
+    if t < 0.5:
+        return 4.0 * t * t * t
+    else:
+        p = 2.0 * t - 2.0
+        return 1.0 + p * p * p / 2.0
+
+def ease_out_back(t):
+    """
+    Back ease-out easing function with slight overshoot for bouncy effect.
+    
+    Args:
+        t: Time parameter between 0.0 and 1.0
+        
+    Returns:
+        Eased value between 0.0 and 1.0 (may slightly exceed 1.0 for overshoot)
+    """
+    c1 = 1.70158
+    c3 = c1 + 1.0
+    return 1.0 + c3 * pow(t - 1.0, 3) + c1 * pow(t - 1.0, 2)
+
+
 
 # ---------- MESH GENERATORS ----------
 
@@ -132,10 +186,23 @@ def draw_fullscreen_image(ctx, tex):
 def render_flap_fold(ctx, from_tex, to_tex, width, height,
                      x_min, x_max, u_min, u_max, seam_x,
                      num_frames, start_angle=0.0, end_angle=np.pi, 
-                     previous_frame=None):
+                     previous_frame=None, easing="quad"):
     """
     Render one flap folding (e.g. Q4→Q3), revealing TO behind the flap only.
-    previous_frame: the result of the previous fold to use as background
+    
+    Args:
+        ctx: ModernGL context
+        from_tex, to_tex: Source and destination textures
+        width, height: Frame dimensions
+        x_min, x_max, u_min, u_max: Flap geometry and texture coordinates
+        seam_x: X-coordinate of the fold seam
+        num_frames: Number of animation frames to generate
+        start_angle, end_angle: Start and end rotation angles in radians
+        previous_frame: Result of previous fold to use as background
+        easing: Easing function type ("linear", "quad", "cubic", "back")
+        
+    Returns:
+        List of rendered frame arrays
     """
     frames = []
 
@@ -204,7 +271,18 @@ def render_flap_fold(ctx, from_tex, to_tex, width, height,
 
     for j in range(num_frames):
         t = j / (num_frames - 1)
-        angle = start_angle + t * (end_angle - start_angle)
+        
+        # Apply easing function for more organic motion
+        if easing == "quad":
+            eased_t = ease_in_out_quad(t)
+        elif easing == "cubic":
+            eased_t = ease_in_out_cubic(t)
+        elif easing == "back":
+            eased_t = ease_out_back(t)
+        else:  # "linear" or any other value
+            eased_t = t
+            
+        angle = start_angle + eased_t * (end_angle - start_angle)
 
         fbo.use()
         ctx.clear(0, 0, 0, 1)
