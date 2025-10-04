@@ -2,6 +2,7 @@
 
 import numpy as np
 import moderngl
+import cv2
 from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 from slideshow.transitions.origami_frame_transition import OrigamiFrameTransition
 from slideshow.transitions.origami_render import draw_fullscreen_image, render_flap_fold
@@ -124,26 +125,100 @@ class OrigamiFoldMultiSlide(OrigamiFrameTransition):
         return composite
 
     def _render_multi_slide_transition(self, from_slide, main_slide, preview_slide2, preview_slide3, output_path):
-        """Render the multi-slide transition with composite destination."""
-        # Get from image
+        """
+        Render the multi-slide transition with composite destination.
+        
+        Creates a video with two phases:
+        1. Transition phase (self.duration): Fold from from_slide to composite layout
+        2. Display phase (main_slide.duration): Show composite with main_slide playing, previews static
+        """
+        # Get static images for transition and previews
         from_img = from_slide.get_from_image()
         main_img = main_slide.get_from_image()
         
-        # Create composite destination
-        composite_img = self._create_composite_destination(main_img, preview_slide2, preview_slide3)
+        # For video slides in preview positions, get first frame only
+        if hasattr(preview_slide2, 'path') and preview_slide2.path.suffix.lower() in ('.mp4', '.mov'):
+            preview2_img = preview_slide2.get_from_image()  # First frame for videos
+        else:
+            preview2_img = preview_slide2.get_from_image()
+            
+        if hasattr(preview_slide3, 'path') and preview_slide3.path.suffix.lower() in ('.mp4', '.mov'):
+            preview3_img = preview_slide3.get_from_image()  # First frame for videos
+        else:
+            preview3_img = preview_slide3.get_from_image()
         
+        # Create static composite destination for transition phase
+        static_composite = self._create_composite_destination(main_img, preview_slide2, preview_slide3)
+        
+        # Phase 1: Create transition frames (fold animation)
+        transition_frames = self._create_transition_frames(from_img, static_composite)
+        
+        # Phase 2: Create display frames (composite with main slide playing)
+        display_frames = self._create_display_frames(main_slide, preview2_img, preview3_img)
+        
+        # Combine all frames
+        all_frames = transition_frames + display_frames
+        
+        # Save as video
+        self._save_frames_as_video(all_frames, output_path)
+
+    def _create_transition_frames(self, from_img, static_composite):
+        """Create frames for the fold transition phase."""
         # Create ModernGL context
         ctx = moderngl.create_context(standalone=True, require=330)
         
         # Create textures
         from_tex = ctx.texture(from_img.size, 3, np.array(from_img.convert("RGB")).tobytes())
-        to_tex = ctx.texture(composite_img.size, 3, np.array(composite_img.convert("RGB")).tobytes())
+        to_tex = ctx.texture(static_composite.size, 3, np.array(static_composite.convert("RGB")).tobytes())
         
         # Render the transition frames using left-to-right fold
-        frames = self._render_left_right_fold(ctx, from_tex, to_tex, from_img.size)
+        return self._render_left_right_fold(ctx, from_tex, to_tex, from_img.size)
+
+    def _create_display_frames(self, main_slide, preview2_img, preview3_img):
+        """
+        Create frames for the display phase where main slide plays while previews stay static.
+        """
+        display_frames = []
         
-        # Save frames as video
-        self._save_frames_as_video(frames, output_path)
+        # Get main slide's rendered video clip for frame extraction
+        main_clip_path = main_slide.get_rendered_clip()
+        if not main_clip_path or not main_clip_path.exists():
+            # Fallback: create static frames with main slide image
+            main_img = main_slide.get_from_image()
+            static_composite = self._create_composite_destination(main_img, type('MockSlide', (), {'get_from_image': lambda: preview2_img})(), type('MockSlide', (), {'get_from_image': lambda: preview3_img})())
+            
+            # Create static frames for the display duration
+            display_duration_frames = int(main_slide.duration * self.fps)
+            for _ in range(display_duration_frames):
+                display_frames.append(np.array(static_composite.convert("RGB")))
+        else:
+            # Extract frames from main slide's video and create composites
+            import cv2
+            cap = cv2.VideoCapture(str(main_clip_path))
+            
+            frame_count = 0
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Convert OpenCV frame to PIL Image
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                main_frame_img = Image.fromarray(frame_rgb)
+                
+                # Create composite with this frame as main slide
+                composite = self._create_composite_destination(
+                    main_frame_img,
+                    type('MockSlide', (), {'get_from_image': lambda: preview2_img})(),
+                    type('MockSlide', (), {'get_from_image': lambda: preview3_img})()
+                )
+                
+                display_frames.append(np.array(composite.convert("RGB")))
+                frame_count += 1
+            
+            cap.release()
+        
+        return display_frames
 
     def _render_left_right_fold(self, ctx, from_tex, to_tex, size):
         """Render left-to-right origami fold transition."""

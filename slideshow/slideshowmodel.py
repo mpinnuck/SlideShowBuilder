@@ -214,6 +214,7 @@ class Slideshow:
             # --- Render transitions ---
             self._log("")  # Newline before transition rendering
             transition_clips = []
+            slide_consumption = {}  # Track which slides are consumed by each transition
             i = 0  # Slide index
             j = 0  # Transition counter
             while i < total_items - 1:
@@ -226,6 +227,7 @@ class Slideshow:
                 # Only create transition if slides were consumed (0 = skip this transition)
                 if slides_consumed > 0:
                     transition_clips.append((i, trans_out))
+                    slide_consumption[i] = slides_consumed  # Track consumption for concat logic
                     if self.progress_callback:
                         self.progress_callback(total_items + j + 1, total_weighted_steps)
                     j += 1
@@ -240,12 +242,26 @@ class Slideshow:
                 if self._intro_clip:
                     f.write(f"file '{self._intro_clip.resolve()}'\n")
 
-                for i, slide in enumerate(self.slides):
-                    f.write(f"file '{slide.get_rendered_clip().resolve()}'\n")
-                    # Insert transition after every slide except last
-                    for idx, tclip in transition_clips:
-                        if idx == i:
+                # Build set of consumed slides to skip in concat
+                consumed_slides = set()
+                for start_idx, _ in transition_clips:
+                    slides_consumed = slide_consumption.get(start_idx, 1)
+                    # Mark slides consumed by this transition (except the starting slide)
+                    for consumed_idx in range(start_idx + 1, start_idx + slides_consumed):
+                        if consumed_idx < len(self.slides):
+                            consumed_slides.add(consumed_idx)
+
+                # Write slides and transitions, skipping consumed slides
+                for slide_idx, slide in enumerate(self.slides):
+                    # Write the slide (unless it was consumed by a previous transition)
+                    if slide_idx not in consumed_slides:
+                        f.write(f"file '{slide.get_rendered_clip().resolve()}'\n")
+                    
+                    # Check if there's a transition starting at this slide
+                    for start_idx, tclip in transition_clips:
+                        if start_idx == slide_idx:
                             f.write(f"file '{tclip.resolve()}'\n")
+                            break
 
             # --- Assemble & mux ---
             expected_duration = self.get_estimated_duration()
