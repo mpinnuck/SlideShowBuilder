@@ -49,7 +49,8 @@ class Slideshow:
             name=self.config.get("transition_type", DEFAULT_CONFIG["transition_type"]),
             duration=float(self.config.get("transition_duration", DEFAULT_CONFIG["transition_duration"])),
             resolution=tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"])),
-            fps=int(self.config.get("fps", DEFAULT_CONFIG["fps"]))
+            fps=int(self.config.get("fps", DEFAULT_CONFIG["fps"])),
+            config=self.config  # Pass full config for transition-specific settings
         )
 
         self.load_slides()

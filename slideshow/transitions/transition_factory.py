@@ -12,7 +12,8 @@ class TransitionFactory:
     def create(name: str,
                duration: float = DEFAULT_CONFIG["transition_duration"],
                resolution=tuple(DEFAULT_CONFIG["resolution"]),
-               fps: int = DEFAULT_CONFIG["fps"]):
+               fps: int = DEFAULT_CONFIG["fps"],
+               config: dict = None):
         """
         Create and return a transition instance based on its name.
 
@@ -21,6 +22,7 @@ class TransitionFactory:
             duration: Transition duration in seconds
             resolution: Output resolution (width, height)
             fps: Target framerate
+            config: Full configuration dictionary for transition-specific settings
 
         Returns:
             A transition instance ready to use.
@@ -28,9 +30,23 @@ class TransitionFactory:
         from slideshow.transitions.fade_transition import FadeTransition
         from slideshow.transitions.origami_transition import OrigamiTransition
 
+        # Extract origami-specific settings from config if provided
+        origami_kwargs = {}
+        if config:
+            origami_kwargs = {
+                'easing': config.get('origami_easing', 'quad'),
+                'lighting': config.get('origami_lighting', True),
+                'fold': config.get('origami_fold', '')  # Empty string means random
+            }
+
         TRANSITIONS = {
             "fade": lambda: FadeTransition(duration=duration),
-            "origami": lambda: OrigamiTransition(duration=duration, resolution=resolution, fps=fps),
+            "origami": lambda: OrigamiTransition(
+                duration=duration, 
+                resolution=resolution, 
+                fps=fps,
+                **origami_kwargs
+            ),
         }
 
         base = name.lower()

@@ -10,7 +10,34 @@ DEFAULT_CONFIG = {
     "transition_duration": 1.0,
     "transition_type": "fade",
     "fps": 30,  # ✅ Default for Apple devices
-    "resolution": [1920, 1080]  # ✅ Default to Full HD
+    "resolution": [1920, 1080],  # ✅ Default to Full HD
+    
+    # Origami transition settings
+    "origami_easing": "quad",
+    "origami_lighting": True,
+    "origami_fold": "",  # Empty means random
+    
+    # Intro title settings
+    "intro_title": {
+        "enabled": False,
+        "text": "",
+        "duration": 5.0,
+        "font_path": "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "font_size": 120,
+        "text_color": [255, 255, 255, 255],
+        "shadow_color": [0, 0, 0, 180],
+        "shadow_offset": [4, 4],
+        "rotation": {
+            "axis": "y",
+            "clockwise": True
+        }
+    },
+    
+    # Advanced settings
+    "hardware_acceleration": False,
+    "temp_directory": "",
+    "auto_cleanup": True,
+    "keep_intermediate_frames": False
 }
 
 CONFIG_FILE = Path("slideshow_config.json")

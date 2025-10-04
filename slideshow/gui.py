@@ -380,7 +380,12 @@ class GUI(tk.Tk):
         self._check_play_button_state()  # Update Play button state
 
     def open_settings(self):
-        self.log_message("Settings dialog coming soon...")
+        """Open the comprehensive settings dialog"""
+        try:
+            SettingsDialog(self)
+        except Exception as e:
+            self.log_message(f"Error opening settings: {e}")
+            messagebox.showerror("Settings Error", f"Failed to open settings dialog: {e}")
 
     def save_config(self):
         """Manual save config - auto-save already handles updates"""
@@ -498,4 +503,458 @@ class GUI(tk.Tk):
         """Re-enable the export button after processing"""
         self.export_button.configure(state='normal')
         # Play button state will be set by _check_play_button_state() call
+
+
+class SettingsDialog:
+    """Comprehensive settings dialog for transitions, titles, and advanced options"""
+    
+    def __init__(self, parent):
+        self.parent = parent
+        self.config_data = parent.config_data.copy()
+        
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Slideshow Settings")
+        self.dialog.geometry("600x500")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # Center the dialog
+        self._center_dialog()
+        
+        # Create the tabbed interface
+        self._create_tabs()
+        
+        # Create bottom buttons
+        self._create_buttons()
+        
+        # Initialize tab content
+        self._init_tabs()
+    
+    def _center_dialog(self):
+        """Center the dialog over the parent window"""
+        self.dialog.update_idletasks()
+        parent_x = self.parent.winfo_x()
+        parent_y = self.parent.winfo_y()
+        parent_w = self.parent.winfo_width()
+        parent_h = self.parent.winfo_height()
+        
+        dialog_w = self.dialog.winfo_width()
+        dialog_h = self.dialog.winfo_height()
+        
+        x = parent_x + (parent_w // 2) - (dialog_w // 2)
+        y = parent_y + (parent_h // 2) - (dialog_h // 2)
+        
+        self.dialog.geometry(f"{dialog_w}x{dialog_h}+{x}+{y}")
+    
+    def _create_tabs(self):
+        """Create the tabbed notebook interface"""
+        self.notebook = ttk.Notebook(self.dialog)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Transition Settings Tab
+        self.transition_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.transition_frame, text="Transitions")
+        
+        # Title Settings Tab
+        self.title_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.title_frame, text="Title/Intro")
+        
+        # Advanced Settings Tab
+        self.advanced_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.advanced_frame, text="Advanced")
+    
+    def _create_buttons(self):
+        """Create OK, Cancel, and Apply buttons"""
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        ttk.Button(button_frame, text="OK", command=self._ok_clicked).pack(side=tk.RIGHT, padx=(5, 0))
+        ttk.Button(button_frame, text="Cancel", command=self._cancel_clicked).pack(side=tk.RIGHT)
+        ttk.Button(button_frame, text="Apply", command=self._apply_clicked).pack(side=tk.RIGHT, padx=(0, 10))
+        ttk.Button(button_frame, text="Reset to Defaults", command=self._reset_clicked).pack(side=tk.LEFT)
+    
+    def _init_tabs(self):
+        """Initialize all tab content"""
+        self._create_transition_settings()
+        self._create_title_settings()
+        self._create_advanced_settings()
+    
+    def _create_transition_settings(self):
+        """Create transition settings controls"""
+        frame = self.transition_frame
+        
+        # Create scrollable frame
+        canvas = tk.Canvas(frame)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Transition Type Selection
+        ttk.Label(scrollable_frame, text="Transition Type:", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        
+        self.transition_type_var = tk.StringVar(value=self.config_data.get("transition_type", "fade"))
+        
+        # Get available transitions
+        self.transition_options = self._get_transition_options()
+        
+        row = 1
+        for transition_name, transition_info in self.transition_options.items():
+            ttk.Radiobutton(
+                scrollable_frame, 
+                text=f"{transition_info['display_name']}", 
+                variable=self.transition_type_var, 
+                value=transition_name
+            ).grid(row=row, column=0, sticky="w", padx=(20, 0))
+            
+            # Add description if available
+            if 'description' in transition_info:
+                desc_label = ttk.Label(scrollable_frame, text=transition_info['description'], foreground="gray")
+                desc_label.grid(row=row, column=1, sticky="w", padx=(10, 0))
+            
+            row += 1
+        
+        # Origami-specific settings (shown when origami is selected)
+        ttk.Separator(scrollable_frame, orient="horizontal").grid(row=row, column=0, columnspan=2, sticky="ew", pady=20)
+        row += 1
+        
+        ttk.Label(scrollable_frame, text="Origami Transition Settings:", font=("Arial", 12, "bold")).grid(row=row, column=0, sticky="w", pady=(0, 10))
+        row += 1
+        
+        # Easing Function
+        ttk.Label(scrollable_frame, text="Animation Easing:").grid(row=row, column=0, sticky="w")
+        self.easing_var = tk.StringVar(value=self.config_data.get("origami_easing", "quad"))
+        easing_combo = ttk.Combobox(scrollable_frame, textvariable=self.easing_var, 
+                                   values=["linear", "quad", "cubic", "back"], state="readonly", width=20)
+        easing_combo.grid(row=row, column=1, sticky="w", padx=(10, 0))
+        row += 1
+        
+        # Lighting
+        self.lighting_var = tk.BooleanVar(value=self.config_data.get("origami_lighting", True))
+        ttk.Checkbutton(scrollable_frame, text="Enable realistic lighting", variable=self.lighting_var).grid(row=row, column=0, columnspan=2, sticky="w", pady=5)
+        row += 1
+        
+        # Fold Direction (for origami)
+        ttk.Label(scrollable_frame, text="Fold Direction:").grid(row=row, column=0, sticky="w")
+        self.fold_direction_var = tk.StringVar(value=self.config_data.get("origami_fold", ""))
+        fold_combo = ttk.Combobox(scrollable_frame, textvariable=self.fold_direction_var,
+                                 values=["", "left", "right", "up", "down", "centerhoriz", "centervert", 
+                                        "slide_left", "slide_right", "multileft", "multiright"], 
+                                 state="readonly", width=20)
+        fold_combo.grid(row=row, column=1, sticky="w", padx=(10, 0))
+        row += 1
+        
+        # Add tooltip for fold direction
+        ttk.Label(scrollable_frame, text="(Leave empty for random)", foreground="gray").grid(row=row, column=1, sticky="w", padx=(10, 0))
+    
+    def _create_title_settings(self):
+        """Create title/intro settings controls"""
+        frame = self.title_frame
+        
+        # Create scrollable frame
+        canvas = tk.Canvas(frame)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        intro_config = self.config_data.get("intro_title", {})
+        
+        # Enable/Disable Intro Title
+        self.intro_enabled_var = tk.BooleanVar(value=intro_config.get("enabled", False))
+        ttk.Checkbutton(scrollable_frame, text="Enable Intro Title", variable=self.intro_enabled_var,
+                       command=self._toggle_intro_controls).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        
+        # Title Text
+        ttk.Label(scrollable_frame, text="Title Text:").grid(row=1, column=0, sticky="w")
+        self.title_text_var = tk.StringVar(value=intro_config.get("text", ""))
+        title_entry = ttk.Entry(scrollable_frame, textvariable=self.title_text_var, width=40)
+        title_entry.grid(row=1, column=1, sticky="w", padx=(10, 0))
+        
+        # Duration
+        ttk.Label(scrollable_frame, text="Duration (seconds):").grid(row=2, column=0, sticky="w")
+        self.title_duration_var = tk.DoubleVar(value=intro_config.get("duration", 5.0))
+        duration_spin = ttk.Spinbox(scrollable_frame, from_=1.0, to=30.0, increment=0.5, 
+                                   textvariable=self.title_duration_var, width=10)
+        duration_spin.grid(row=2, column=1, sticky="w", padx=(10, 0))
+        
+        # Font Size
+        ttk.Label(scrollable_frame, text="Font Size:").grid(row=3, column=0, sticky="w")
+        self.font_size_var = tk.IntVar(value=intro_config.get("font_size", 120))
+        font_spin = ttk.Spinbox(scrollable_frame, from_=20, to=300, increment=10, 
+                               textvariable=self.font_size_var, width=10)
+        font_spin.grid(row=3, column=1, sticky="w", padx=(10, 0))
+        
+        # Text Color
+        ttk.Label(scrollable_frame, text="Text Color (RGBA):").grid(row=4, column=0, sticky="w")
+        color_frame = ttk.Frame(scrollable_frame)
+        color_frame.grid(row=4, column=1, sticky="w", padx=(10, 0))
+        
+        text_color = intro_config.get("text_color", [255, 255, 255, 255])
+        self.text_r_var = tk.IntVar(value=text_color[0])
+        self.text_g_var = tk.IntVar(value=text_color[1])
+        self.text_b_var = tk.IntVar(value=text_color[2])
+        self.text_a_var = tk.IntVar(value=text_color[3])
+        
+        for i, (var, label) in enumerate([(self.text_r_var, "R"), (self.text_g_var, "G"), 
+                                         (self.text_b_var, "B"), (self.text_a_var, "A")]):
+            ttk.Label(color_frame, text=f"{label}:").grid(row=0, column=i*2, sticky="w")
+            ttk.Spinbox(color_frame, from_=0, to=255, textvariable=var, width=5).grid(row=0, column=i*2+1, padx=(2, 5))
+        
+        # Shadow Color
+        ttk.Label(scrollable_frame, text="Shadow Color (RGBA):").grid(row=5, column=0, sticky="w")
+        shadow_frame = ttk.Frame(scrollable_frame)
+        shadow_frame.grid(row=5, column=1, sticky="w", padx=(10, 0))
+        
+        shadow_color = intro_config.get("shadow_color", [0, 0, 0, 180])
+        self.shadow_r_var = tk.IntVar(value=shadow_color[0])
+        self.shadow_g_var = tk.IntVar(value=shadow_color[1])
+        self.shadow_b_var = tk.IntVar(value=shadow_color[2])
+        self.shadow_a_var = tk.IntVar(value=shadow_color[3])
+        
+        for i, (var, label) in enumerate([(self.shadow_r_var, "R"), (self.shadow_g_var, "G"), 
+                                         (self.shadow_b_var, "B"), (self.shadow_a_var, "A")]):
+            ttk.Label(shadow_frame, text=f"{label}:").grid(row=0, column=i*2, sticky="w")
+            ttk.Spinbox(shadow_frame, from_=0, to=255, textvariable=var, width=5).grid(row=0, column=i*2+1, padx=(2, 5))
+        
+        # Shadow Offset
+        ttk.Label(scrollable_frame, text="Shadow Offset (X, Y):").grid(row=6, column=0, sticky="w")
+        offset_frame = ttk.Frame(scrollable_frame)
+        offset_frame.grid(row=6, column=1, sticky="w", padx=(10, 0))
+        
+        shadow_offset = intro_config.get("shadow_offset", [4, 4])
+        self.shadow_x_var = tk.IntVar(value=shadow_offset[0])
+        self.shadow_y_var = tk.IntVar(value=shadow_offset[1])
+        
+        ttk.Label(offset_frame, text="X:").grid(row=0, column=0, sticky="w")
+        ttk.Spinbox(offset_frame, from_=-20, to=20, textvariable=self.shadow_x_var, width=5).grid(row=0, column=1, padx=(2, 10))
+        ttk.Label(offset_frame, text="Y:").grid(row=0, column=2, sticky="w")
+        ttk.Spinbox(offset_frame, from_=-20, to=20, textvariable=self.shadow_y_var, width=5).grid(row=0, column=3, padx=(2, 0))
+        
+        # Rotation Settings
+        ttk.Label(scrollable_frame, text="Rotation:", font=("Arial", 10, "bold")).grid(row=7, column=0, sticky="w", pady=(20, 5))
+        
+        rotation_config = intro_config.get("rotation", {})
+        
+        ttk.Label(scrollable_frame, text="Rotation Axis:").grid(row=8, column=0, sticky="w")
+        self.rotation_axis_var = tk.StringVar(value=rotation_config.get("axis", "y"))
+        axis_combo = ttk.Combobox(scrollable_frame, textvariable=self.rotation_axis_var,
+                                 values=["x", "y", "z"], state="readonly", width=10)
+        axis_combo.grid(row=8, column=1, sticky="w", padx=(10, 0))
+        
+        self.rotation_clockwise_var = tk.BooleanVar(value=rotation_config.get("clockwise", True))
+        ttk.Checkbutton(scrollable_frame, text="Clockwise rotation", variable=self.rotation_clockwise_var).grid(row=9, column=0, columnspan=2, sticky="w", pady=5)
+        
+        # Store title controls for enable/disable
+        self.title_controls = [title_entry, duration_spin, font_spin] + \
+                             [child for child in color_frame.winfo_children() if isinstance(child, ttk.Spinbox)] + \
+                             [child for child in shadow_frame.winfo_children() if isinstance(child, ttk.Spinbox)] + \
+                             [child for child in offset_frame.winfo_children() if isinstance(child, ttk.Spinbox)] + \
+                             [axis_combo]
+        
+        # Initial state
+        self._toggle_intro_controls()
+    
+    def _create_advanced_settings(self):
+        """Create advanced settings controls"""
+        frame = self.advanced_frame
+        
+        # Create scrollable frame
+        canvas = tk.Canvas(frame)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Video Quality Settings
+        ttk.Label(scrollable_frame, text="Video Quality:", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        
+        # Resolution
+        ttk.Label(scrollable_frame, text="Resolution:").grid(row=1, column=0, sticky="w")
+        current_res = self.config_data.get("resolution", [1920, 1080])
+        self.resolution_var = tk.StringVar(value=f"{current_res[0]}x{current_res[1]}")
+        res_combo = ttk.Combobox(scrollable_frame, textvariable=self.resolution_var,
+                                values=["1920x1080", "1280x720", "3840x2160", "2560x1440"], 
+                                state="readonly", width=15)
+        res_combo.grid(row=1, column=1, sticky="w", padx=(10, 0))
+        
+        # FPS
+        ttk.Label(scrollable_frame, text="Frame Rate (FPS):").grid(row=2, column=0, sticky="w")
+        self.fps_var = tk.IntVar(value=self.config_data.get("fps", 30))
+        fps_combo = ttk.Combobox(scrollable_frame, textvariable=self.fps_var,
+                                values=[24, 25, 30, 50, 60], state="readonly", width=10)
+        fps_combo.grid(row=2, column=1, sticky="w", padx=(10, 0))
+        
+        # Performance Settings
+        ttk.Separator(scrollable_frame, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=20)
+        ttk.Label(scrollable_frame, text="Performance:", font=("Arial", 12, "bold")).grid(row=4, column=0, sticky="w", pady=(0, 10))
+        
+        # Hardware Acceleration
+        self.hw_accel_var = tk.BooleanVar(value=self.config_data.get("hardware_acceleration", False))
+        ttk.Checkbutton(scrollable_frame, text="Enable hardware acceleration (experimental)", 
+                       variable=self.hw_accel_var).grid(row=5, column=0, columnspan=2, sticky="w")
+        
+        # Temp Directory
+        ttk.Label(scrollable_frame, text="Temporary Directory:").grid(row=6, column=0, sticky="w", pady=(10, 0))
+        self.temp_dir_var = tk.StringVar(value=self.config_data.get("temp_directory", ""))
+        temp_frame = ttk.Frame(scrollable_frame)
+        temp_frame.grid(row=6, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        ttk.Entry(temp_frame, textvariable=self.temp_dir_var, width=30).grid(row=0, column=0)
+        ttk.Button(temp_frame, text="Browse", command=self._browse_temp_dir).grid(row=0, column=1, padx=(5, 0))
+        
+        # Cleanup Settings
+        ttk.Separator(scrollable_frame, orient="horizontal").grid(row=7, column=0, columnspan=2, sticky="ew", pady=20)
+        ttk.Label(scrollable_frame, text="Cleanup:", font=("Arial", 12, "bold")).grid(row=8, column=0, sticky="w", pady=(0, 10))
+        
+        self.auto_cleanup_var = tk.BooleanVar(value=self.config_data.get("auto_cleanup", True))
+        ttk.Checkbutton(scrollable_frame, text="Automatically clean up temporary files", 
+                       variable=self.auto_cleanup_var).grid(row=9, column=0, columnspan=2, sticky="w")
+        
+        self.keep_frames_var = tk.BooleanVar(value=self.config_data.get("keep_intermediate_frames", False))
+        ttk.Checkbutton(scrollable_frame, text="Keep intermediate frames for debugging", 
+                       variable=self.keep_frames_var).grid(row=10, column=0, columnspan=2, sticky="w")
+    
+    def _get_transition_options(self):
+        """Get available transition options with descriptions"""
+        try:
+            from slideshow.transitions import list_available_transitions
+            available = list_available_transitions()
+            
+            options = {}
+            for trans in available:
+                options[trans['name']] = {
+                    'display_name': trans['display_name'],
+                    'description': trans.get('description', '')
+                }
+            
+            # Add manual descriptions for key transitions
+            descriptions = {
+                'fade': 'Simple cross-fade between slides',
+                'origami': 'Advanced paper-folding animation with realistic lighting',
+                'wipe': 'Slide wipe transition',
+                'push': 'Push transition effect'
+            }
+            
+            for name, desc in descriptions.items():
+                if name in options and not options[name]['description']:
+                    options[name]['description'] = desc
+            
+            return options
+        except:
+            # Fallback
+            return {
+                'fade': {'display_name': 'Fade', 'description': 'Simple cross-fade between slides'},
+                'origami': {'display_name': 'Origami', 'description': 'Advanced paper-folding animation'}
+            }
+    
+    def _toggle_intro_controls(self):
+        """Enable/disable intro title controls based on checkbox"""
+        state = "normal" if self.intro_enabled_var.get() else "disabled"
+        for control in self.title_controls:
+            if hasattr(control, 'configure'):
+                control.configure(state=state)
+    
+    def _browse_temp_dir(self):
+        """Browse for temporary directory"""
+        from tkinter import filedialog
+        directory = filedialog.askdirectory()
+        if directory:
+            self.temp_dir_var.set(directory)
+    
+    def _apply_settings(self):
+        """Apply current settings to config"""
+        # Basic transition settings
+        self.config_data["transition_type"] = self.transition_type_var.get()
+        self.config_data["origami_easing"] = self.easing_var.get()
+        self.config_data["origami_lighting"] = self.lighting_var.get()
+        self.config_data["origami_fold"] = self.fold_direction_var.get()
+        
+        # Title settings
+        intro_config = {
+            "enabled": self.intro_enabled_var.get(),
+            "text": self.title_text_var.get(),
+            "duration": self.title_duration_var.get(),
+            "font_size": self.font_size_var.get(),
+            "text_color": [self.text_r_var.get(), self.text_g_var.get(), self.text_b_var.get(), self.text_a_var.get()],
+            "shadow_color": [self.shadow_r_var.get(), self.shadow_g_var.get(), self.shadow_b_var.get(), self.shadow_a_var.get()],
+            "shadow_offset": [self.shadow_x_var.get(), self.shadow_y_var.get()],
+            "rotation": {
+                "axis": self.rotation_axis_var.get(),
+                "clockwise": self.rotation_clockwise_var.get()
+            }
+        }
+        self.config_data["intro_title"] = intro_config
+        
+        # Advanced settings
+        res_str = self.resolution_var.get()
+        width, height = map(int, res_str.split('x'))
+        self.config_data["resolution"] = [width, height]
+        self.config_data["fps"] = self.fps_var.get()
+        self.config_data["hardware_acceleration"] = self.hw_accel_var.get()
+        self.config_data["temp_directory"] = self.temp_dir_var.get()
+        self.config_data["auto_cleanup"] = self.auto_cleanup_var.get()
+        self.config_data["keep_intermediate_frames"] = self.keep_frames_var.get()
+        
+        # Update parent's config and GUI
+        self.parent.config_data = self.config_data
+        self.parent._auto_save_config()
+        
+        # Update transition combo in main GUI if needed
+        if hasattr(self.parent, 'transition_var'):
+            self.parent.transition_var.set(self.config_data["transition_type"])
+    
+    def _reset_clicked(self):
+        """Reset all settings to defaults"""
+        from slideshow.config import DEFAULT_CONFIG
+        result = messagebox.askyesno("Reset Settings", 
+                                   "This will reset all settings to their default values. Continue?")
+        if result:
+            self.config_data = DEFAULT_CONFIG.copy()
+            self.dialog.destroy()
+            # Reopen with defaults
+            SettingsDialog(self.parent)
+    
+    def _ok_clicked(self):
+        """OK button clicked - apply and close"""
+        self._apply_settings()
+        self.parent.log_message("Settings saved successfully")
+        self.dialog.destroy()
+    
+    def _apply_clicked(self):
+        """Apply button clicked - apply without closing"""
+        self._apply_settings()
+        self.parent.log_message("Settings applied")
+    
+    def _cancel_clicked(self):
+        """Cancel button clicked - close without saving"""
+        self.dialog.destroy()
 
