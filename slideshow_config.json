@@ -16,9 +16,12 @@
   "origami_fold": "",
   "intro_title": {
     "enabled": true,
-    "text": "Europe 2025",
+    "text": "Europe\\nAugust 2025",
     "duration": 8.0,
+    "font_path": "/System/Library/Fonts/Arial.ttf",
     "font_size": 180,
+    "font_weight": "light",
+    "line_spacing": 1.2,
     "text_color": [
       255,
       215,

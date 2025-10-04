@@ -15,6 +15,11 @@ class OrigamiFoldMultiLR(OrigamiFrameTransition):
         super().__init__(**kwargs)
         self.easing = easing  # Easing function: "linear", "quad", "cubic", "back"
         self.lighting = lighting  # Enable realistic directional lighting for depth
+        
+        # Multi-fold transitions need more time to be visible - use minimum 2.5 seconds
+        self.effective_duration = max(self.duration, 2.5)
+        if self.effective_duration > self.duration:
+            print(f"Note: Multi-fold transition extended from {self.duration}s to {self.effective_duration}s for better visibility")
 
     def get_requirements(self):
         return ["moderngl", "numpy", "Pillow", "ffmpeg"]
@@ -53,7 +58,18 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
         )
         frames.append(frame0.copy())
 
-        per_fold_frames = num_frames // 4
+        # Calculate frames using effective duration for better timing
+        effective_frames = int(self.effective_duration * self.fps)
+        
+        # Distribute frames with more time for each fold (minimum 15 frames per fold)
+        min_frames_per_fold = 15  # 0.5 seconds at 30fps
+        per_fold_frames = max(min_frames_per_fold, effective_frames // 4)
+        
+        # Add a small pause between folds for better visual separation
+        pause_frames = max(1, effective_frames // 20)  # Small pause between folds
+        
+        print(f"Multi-fold timing: {per_fold_frames} frames per fold, {pause_frames} pause frames")
+        
         previous_frame = frame0  # Start with the FROM image
 
         # LEFT direction: Fold 1: Q4 → Q3
@@ -66,6 +82,10 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
                                    lighting=self.lighting)
         frames += fold1_frames
         previous_frame = fold1_frames[-1] if fold1_frames else previous_frame
+        
+        # Brief pause for visual separation
+        for _ in range(pause_frames):
+            frames.append(previous_frame.copy())
 
         # Fold 2: Q3 → Q2
         fold2_frames = render_flap_fold(ctx, from_tex, to_tex,
@@ -77,6 +97,10 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
                                    lighting=self.lighting)
         frames += fold2_frames
         previous_frame = fold2_frames[-1] if fold2_frames else previous_frame
+        
+        # Brief pause for visual separation
+        for _ in range(pause_frames):
+            frames.append(previous_frame.copy())
 
         # Fold 3: Q2 → Q1
         fold3_frames = render_flap_fold(ctx, from_tex, to_tex,
@@ -88,6 +112,10 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
                                    lighting=self.lighting)
         frames += fold3_frames
         previous_frame = fold3_frames[-1] if fold3_frames else previous_frame
+        
+        # Brief pause for visual separation
+        for _ in range(pause_frames):
+            frames.append(previous_frame.copy())
 
         # Fold 4: Q1 book fold 0→90 at left edge
         fold4_frames = render_flap_fold(ctx, from_tex, to_tex,
@@ -126,7 +154,18 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
         )
         frames.append(frame0.copy())
 
-        per_fold_frames = num_frames // 4
+        # Calculate frames using effective duration for better timing
+        effective_frames = int(self.effective_duration * self.fps)
+        
+        # Distribute frames with more time for each fold (minimum 15 frames per fold)
+        min_frames_per_fold = 15  # 0.5 seconds at 30fps
+        per_fold_frames = max(min_frames_per_fold, effective_frames // 4)
+        
+        # Add a small pause between folds for better visual separation
+        pause_frames = max(1, effective_frames // 20)  # Small pause between folds
+        
+        print(f"Multi-fold timing: {per_fold_frames} frames per fold, {pause_frames} pause frames")
+        
         previous_frame = frame0  # Start with the FROM image
 
         # RIGHT direction: Fold 1: Q1 → Q2 (leftmost quarter folds right over Q2)
@@ -139,6 +178,10 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
                                    lighting=self.lighting)
         frames += fold1_frames
         previous_frame = fold1_frames[-1] if fold1_frames else previous_frame
+        
+        # Brief pause for visual separation
+        for _ in range(pause_frames):
+            frames.append(previous_frame.copy())
 
         # Fold 2: Q2 → Q3
         fold2_frames = render_flap_fold(ctx, from_tex, to_tex,
@@ -150,6 +193,10 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
                                    lighting=self.lighting)
         frames += fold2_frames
         previous_frame = fold2_frames[-1] if fold2_frames else previous_frame
+        
+        # Brief pause for visual separation
+        for _ in range(pause_frames):
+            frames.append(previous_frame.copy())
 
         # Fold 3: Q3 → Q4
         fold3_frames = render_flap_fold(ctx, from_tex, to_tex,
@@ -161,6 +208,10 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
                                    lighting=self.lighting)
         frames += fold3_frames
         previous_frame = fold3_frames[-1] if fold3_frames else previous_frame
+        
+        # Brief pause for visual separation
+        for _ in range(pause_frames):
+            frames.append(previous_frame.copy())
 
         # Fold 4: Q4 book fold 0→90 at right edge
         fold4_frames = render_flap_fold(ctx, from_tex, to_tex,

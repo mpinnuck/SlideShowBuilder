@@ -22,8 +22,10 @@ DEFAULT_CONFIG = {
         "enabled": False,
         "text": "",
         "duration": 5.0,
-        "font_path": "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "font_path": "/System/Library/Fonts/Arial.ttf",  # User-configurable font path
         "font_size": 120,
+        "font_weight": "normal",  # "normal", "bold", "light" - affects font selection
+        "line_spacing": 1.2,  # Line spacing multiplier (1.0 = single spacing, 1.5 = 1.5x spacing)
         "text_color": [255, 255, 255, 255],
         "shadow_color": [0, 0, 0, 180],
         "shadow_offset": [4, 4],

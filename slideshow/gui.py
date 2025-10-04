@@ -515,10 +515,13 @@ class SettingsDialog:
         # Create dialog window
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Slideshow Settings")
-        self.dialog.geometry("600x500")
+        self.dialog.geometry("800x600")  # Increased width from 600 to 800
         self.dialog.resizable(True, True)
         self.dialog.transient(parent)
         self.dialog.grab_set()
+        
+        # Set minimum size to prevent clipping
+        self.dialog.minsize(750, 500)
         
         # Center the dialog
         self._center_dialog()
@@ -672,6 +675,9 @@ class SettingsDialog:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         
+        # Configure grid weights for proper expansion in title settings
+        scrollable_frame.columnconfigure(1, weight=1)
+        
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
@@ -685,30 +691,74 @@ class SettingsDialog:
         ttk.Checkbutton(scrollable_frame, text="Enable Intro Title", variable=self.intro_enabled_var,
                        command=self._toggle_intro_controls).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
         
-        # Title Text
-        ttk.Label(scrollable_frame, text="Title Text:").grid(row=1, column=0, sticky="w")
-        self.title_text_var = tk.StringVar(value=intro_config.get("text", ""))
-        title_entry = ttk.Entry(scrollable_frame, textvariable=self.title_text_var, width=40)
-        title_entry.grid(row=1, column=1, sticky="w", padx=(10, 0))
+        # Title Text - Multi-line support
+        ttk.Label(scrollable_frame, text="Title Text:").grid(row=1, column=0, sticky="nw")
+        text_frame = ttk.Frame(scrollable_frame)
+        text_frame.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(0, 5))
+        text_frame.columnconfigure(0, weight=1)  # Make text widget expand
+        
+        # Create text widget with scrollbar for multi-line input
+        self.title_text_widget = tk.Text(text_frame, width=50, height=4, wrap=tk.WORD)
+        text_scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=self.title_text_widget.yview)
+        self.title_text_widget.configure(yscrollcommand=text_scrollbar.set)
+        
+        self.title_text_widget.grid(row=0, column=0, sticky="ew")
+        text_scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        # Insert current text
+        current_text = intro_config.get("text", "").replace('\\n', '\n')
+        self.title_text_widget.insert(1.0, current_text)
+        
+        # Add helper label
+        helper_label = ttk.Label(scrollable_frame, text="(Use Enter for new lines)", foreground="gray")
+        helper_label.grid(row=2, column=1, sticky="w", padx=(10, 0))
         
         # Duration
-        ttk.Label(scrollable_frame, text="Duration (seconds):").grid(row=2, column=0, sticky="w")
+        ttk.Label(scrollable_frame, text="Duration (seconds):").grid(row=3, column=0, sticky="w")
         self.title_duration_var = tk.DoubleVar(value=intro_config.get("duration", 5.0))
         duration_spin = ttk.Spinbox(scrollable_frame, from_=1.0, to=30.0, increment=0.5, 
                                    textvariable=self.title_duration_var, width=10)
-        duration_spin.grid(row=2, column=1, sticky="w", padx=(10, 0))
+        duration_spin.grid(row=3, column=1, sticky="w", padx=(10, 0))
+        
+        # Line Spacing
+        ttk.Label(scrollable_frame, text="Line Spacing:").grid(row=4, column=0, sticky="w")
+        self.line_spacing_var = tk.DoubleVar(value=intro_config.get("line_spacing", 1.2))
+        spacing_spin = ttk.Spinbox(scrollable_frame, from_=0.8, to=3.0, increment=0.1, 
+                                  textvariable=self.line_spacing_var, width=10, format="%.1f")
+        spacing_spin.grid(row=4, column=1, sticky="w", padx=(10, 0))
+        
+        # Font Settings Section
+        ttk.Label(scrollable_frame, text="Font:", font=("Arial", 10, "bold")).grid(row=5, column=0, sticky="w", pady=(10, 5))
+        
+        # Font Path
+        ttk.Label(scrollable_frame, text="Font File:").grid(row=6, column=0, sticky="w")
+        font_path_frame = ttk.Frame(scrollable_frame)
+        font_path_frame.grid(row=6, column=1, sticky="ew", padx=(10, 0))
+        font_path_frame.columnconfigure(0, weight=1)  # Make entry expand
+        
+        self.font_path_var = tk.StringVar(value=intro_config.get("font_path", "/System/Library/Fonts/Arial.ttf"))
+        font_path_entry = ttk.Entry(font_path_frame, textvariable=self.font_path_var, width=45)
+        font_path_entry.grid(row=0, column=0, sticky="ew")
+        ttk.Button(font_path_frame, text="Browse", command=self._browse_font_file).grid(row=0, column=1, padx=(5, 0))
         
         # Font Size
-        ttk.Label(scrollable_frame, text="Font Size:").grid(row=3, column=0, sticky="w")
+        ttk.Label(scrollable_frame, text="Font Size:").grid(row=7, column=0, sticky="w")
         self.font_size_var = tk.IntVar(value=intro_config.get("font_size", 120))
         font_spin = ttk.Spinbox(scrollable_frame, from_=20, to=300, increment=10, 
                                textvariable=self.font_size_var, width=10)
-        font_spin.grid(row=3, column=1, sticky="w", padx=(10, 0))
+        font_spin.grid(row=7, column=1, sticky="w", padx=(10, 0))
+        
+        # Font Weight
+        ttk.Label(scrollable_frame, text="Font Weight:").grid(row=8, column=0, sticky="w")
+        self.font_weight_var = tk.StringVar(value=intro_config.get("font_weight", "normal"))
+        weight_combo = ttk.Combobox(scrollable_frame, textvariable=self.font_weight_var,
+                                   values=["light", "normal", "bold"], state="readonly", width=10)
+        weight_combo.grid(row=8, column=1, sticky="w", padx=(10, 0))
         
         # Text Color
-        ttk.Label(scrollable_frame, text="Text Color (RGBA):").grid(row=4, column=0, sticky="w")
+        ttk.Label(scrollable_frame, text="Text Color (RGBA):").grid(row=9, column=0, sticky="w")
         color_frame = ttk.Frame(scrollable_frame)
-        color_frame.grid(row=4, column=1, sticky="w", padx=(10, 0))
+        color_frame.grid(row=9, column=1, sticky="ew", padx=(10, 0))
         
         text_color = intro_config.get("text_color", [255, 255, 255, 255])
         self.text_r_var = tk.IntVar(value=text_color[0])
@@ -718,13 +768,13 @@ class SettingsDialog:
         
         for i, (var, label) in enumerate([(self.text_r_var, "R"), (self.text_g_var, "G"), 
                                          (self.text_b_var, "B"), (self.text_a_var, "A")]):
-            ttk.Label(color_frame, text=f"{label}:").grid(row=0, column=i*2, sticky="w")
-            ttk.Spinbox(color_frame, from_=0, to=255, textvariable=var, width=5).grid(row=0, column=i*2+1, padx=(2, 5))
+            ttk.Label(color_frame, text=f"{label}:").grid(row=0, column=i*2, sticky="w", padx=(0 if i == 0 else 5, 2))
+            ttk.Spinbox(color_frame, from_=0, to=255, textvariable=var, width=6).grid(row=0, column=i*2+1, padx=(0, 8))
         
         # Shadow Color
-        ttk.Label(scrollable_frame, text="Shadow Color (RGBA):").grid(row=5, column=0, sticky="w")
+        ttk.Label(scrollable_frame, text="Shadow Color (RGBA):").grid(row=10, column=0, sticky="w")
         shadow_frame = ttk.Frame(scrollable_frame)
-        shadow_frame.grid(row=5, column=1, sticky="w", padx=(10, 0))
+        shadow_frame.grid(row=10, column=1, sticky="ew", padx=(10, 0))
         
         shadow_color = intro_config.get("shadow_color", [0, 0, 0, 180])
         self.shadow_r_var = tk.IntVar(value=shadow_color[0])
@@ -734,13 +784,13 @@ class SettingsDialog:
         
         for i, (var, label) in enumerate([(self.shadow_r_var, "R"), (self.shadow_g_var, "G"), 
                                          (self.shadow_b_var, "B"), (self.shadow_a_var, "A")]):
-            ttk.Label(shadow_frame, text=f"{label}:").grid(row=0, column=i*2, sticky="w")
-            ttk.Spinbox(shadow_frame, from_=0, to=255, textvariable=var, width=5).grid(row=0, column=i*2+1, padx=(2, 5))
+            ttk.Label(shadow_frame, text=f"{label}:").grid(row=0, column=i*2, sticky="w", padx=(0 if i == 0 else 5, 2))
+            ttk.Spinbox(shadow_frame, from_=0, to=255, textvariable=var, width=6).grid(row=0, column=i*2+1, padx=(0, 8))
         
         # Shadow Offset
-        ttk.Label(scrollable_frame, text="Shadow Offset (X, Y):").grid(row=6, column=0, sticky="w")
+        ttk.Label(scrollable_frame, text="Shadow Offset (X, Y):").grid(row=11, column=0, sticky="w")
         offset_frame = ttk.Frame(scrollable_frame)
-        offset_frame.grid(row=6, column=1, sticky="w", padx=(10, 0))
+        offset_frame.grid(row=11, column=1, sticky="w", padx=(10, 0))
         
         shadow_offset = intro_config.get("shadow_offset", [4, 4])
         self.shadow_x_var = tk.IntVar(value=shadow_offset[0])
@@ -752,21 +802,21 @@ class SettingsDialog:
         ttk.Spinbox(offset_frame, from_=-20, to=20, textvariable=self.shadow_y_var, width=5).grid(row=0, column=3, padx=(2, 0))
         
         # Rotation Settings
-        ttk.Label(scrollable_frame, text="Rotation:", font=("Arial", 10, "bold")).grid(row=7, column=0, sticky="w", pady=(20, 5))
+        ttk.Label(scrollable_frame, text="Rotation:", font=("Arial", 10, "bold")).grid(row=12, column=0, sticky="w", pady=(20, 5))
         
         rotation_config = intro_config.get("rotation", {})
         
-        ttk.Label(scrollable_frame, text="Rotation Axis:").grid(row=8, column=0, sticky="w")
+        ttk.Label(scrollable_frame, text="Rotation Axis:").grid(row=13, column=0, sticky="w")
         self.rotation_axis_var = tk.StringVar(value=rotation_config.get("axis", "y"))
         axis_combo = ttk.Combobox(scrollable_frame, textvariable=self.rotation_axis_var,
                                  values=["x", "y", "z"], state="readonly", width=10)
-        axis_combo.grid(row=8, column=1, sticky="w", padx=(10, 0))
+        axis_combo.grid(row=13, column=1, sticky="w", padx=(10, 0))
         
         self.rotation_clockwise_var = tk.BooleanVar(value=rotation_config.get("clockwise", True))
-        ttk.Checkbutton(scrollable_frame, text="Clockwise rotation", variable=self.rotation_clockwise_var).grid(row=9, column=0, columnspan=2, sticky="w", pady=5)
+        ttk.Checkbutton(scrollable_frame, text="Clockwise rotation", variable=self.rotation_clockwise_var).grid(row=14, column=0, columnspan=2, sticky="w", pady=5)
         
         # Store title controls for enable/disable
-        self.title_controls = [title_entry, duration_spin, font_spin] + \
+        self.title_controls = [self.title_text_widget, duration_spin, spacing_spin, font_path_entry, font_spin, weight_combo] + \
                              [child for child in color_frame.winfo_children() if isinstance(child, ttk.Spinbox)] + \
                              [child for child in shadow_frame.winfo_children() if isinstance(child, ttk.Spinbox)] + \
                              [child for child in offset_frame.winfo_children() if isinstance(child, ttk.Spinbox)] + \
@@ -883,6 +933,28 @@ class SettingsDialog:
             if hasattr(control, 'configure'):
                 control.configure(state=state)
     
+    def _browse_font_file(self):
+        """Browse for font file"""
+        from tkinter import filedialog
+        
+        # Common font file extensions
+        filetypes = [
+            ("Font Files", "*.ttf *.otf *.ttc"),
+            ("TrueType Fonts", "*.ttf"),
+            ("OpenType Fonts", "*.otf"), 
+            ("TrueType Collections", "*.ttc"),
+            ("All Files", "*.*")
+        ]
+        
+        filename = filedialog.askopenfilename(
+            title="Select Font File",
+            filetypes=filetypes,
+            initialdir="/System/Library/Fonts"
+        )
+        
+        if filename:
+            self.font_path_var.set(filename)
+    
     def _browse_temp_dir(self):
         """Browse for temporary directory"""
         from tkinter import filedialog
@@ -899,11 +971,18 @@ class SettingsDialog:
         self.config_data["origami_fold"] = self.fold_direction_var.get()
         
         # Title settings
+        title_text = self.title_text_widget.get(1.0, tk.END).strip()
+        # Convert actual newlines to \\n for JSON storage
+        title_text = title_text.replace('\n', '\\n')
+        
         intro_config = {
             "enabled": self.intro_enabled_var.get(),
-            "text": self.title_text_var.get(),
+            "text": title_text,
             "duration": self.title_duration_var.get(),
+            "font_path": self.font_path_var.get(),
             "font_size": self.font_size_var.get(),
+            "font_weight": self.font_weight_var.get(),
+            "line_spacing": self.line_spacing_var.get(),
             "text_color": [self.text_r_var.get(), self.text_g_var.get(), self.text_b_var.get(), self.text_a_var.get()],
             "shadow_color": [self.shadow_r_var.get(), self.shadow_g_var.get(), self.shadow_b_var.get(), self.shadow_a_var.get()],
             "shadow_offset": [self.shadow_x_var.get(), self.shadow_y_var.get()],
