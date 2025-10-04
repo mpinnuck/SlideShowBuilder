@@ -15,11 +15,6 @@ class OrigamiFoldMultiLR(OrigamiFrameTransition):
         super().__init__(**kwargs)
         self.easing = easing  # Easing function: "linear", "quad", "cubic", "back"
         self.lighting = lighting  # Enable realistic directional lighting for depth
-        
-        # Multi-fold transitions need more time to be visible - use minimum 2.5 seconds
-        self.effective_duration = max(self.duration, 2.5)
-        if self.effective_duration > self.duration:
-            print(f"Note: Multi-fold transition extended from {self.duration}s to {self.effective_duration}s for better visibility")
 
     def get_requirements(self):
         return ["moderngl", "numpy", "Pillow", "ffmpeg"]
@@ -58,15 +53,14 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
         )
         frames.append(frame0.copy())
 
-        # Calculate frames using effective duration for better timing
-        effective_frames = int(self.effective_duration * self.fps)
+        # Calculate frames using configured duration
+        total_frames = int(self.duration * self.fps)
         
-        # Distribute frames with more time for each fold (minimum 15 frames per fold)
-        min_frames_per_fold = 15  # 0.5 seconds at 30fps
-        per_fold_frames = max(min_frames_per_fold, effective_frames // 4)
+        # Distribute frames across 4 folds with pause frames between
+        per_fold_frames = max(7, total_frames // 5)  # Reserve space for pause frames
         
-        # Add a small pause between folds for better visual separation
-        pause_frames = max(1, effective_frames // 20)  # Small pause between folds
+        # Add pause frames between folds for visual separation
+        pause_frames = max(1, total_frames // 30)  # Small pause between folds
         
         print(f"Multi-fold timing: {per_fold_frames} frames per fold, {pause_frames} pause frames")
         
@@ -154,15 +148,14 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
         )
         frames.append(frame0.copy())
 
-        # Calculate frames using effective duration for better timing
-        effective_frames = int(self.effective_duration * self.fps)
+        # Calculate frames using configured duration
+        total_frames = int(self.duration * self.fps)
         
-        # Distribute frames with more time for each fold (minimum 15 frames per fold)
-        min_frames_per_fold = 15  # 0.5 seconds at 30fps
-        per_fold_frames = max(min_frames_per_fold, effective_frames // 4)
+        # Distribute frames across 4 folds with pause frames between
+        per_fold_frames = max(7, total_frames // 5)  # Reserve space for pause frames
         
-        # Add a small pause between folds for better visual separation
-        pause_frames = max(1, effective_frames // 20)  # Small pause between folds
+        # Add pause frames between folds for visual separation
+        pause_frames = max(1, total_frames // 30)  # Small pause between folds
         
         print(f"Multi-fold timing: {per_fold_frames} frames per fold, {pause_frames} pause frames")
         
