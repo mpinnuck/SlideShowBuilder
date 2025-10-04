@@ -213,6 +213,25 @@ class LeftRightFold(OrigamiFrameTransition):
             frames.append(frame_array.copy())
         return frames
 
+    def render(self, index: int, slides: list, output_path) -> int:
+        """Render method using slides from array. Returns number of slides consumed (always 1 for basic transitions)."""
+        if index + 1 >= len(slides):
+            raise ValueError(f"LeftRightFold: Not enough slides for transition at index {index}")
+        
+        from_slide = slides[index]
+        to_slide = slides[index + 1]
+        
+        # Use the parent class render_frames logic directly
+        from_img = from_slide.get_from_image()
+        to_img = to_slide.get_to_image()
+
+        frames = self.render_frames(from_img, to_img)
+        from slideshow.transitions.utils import save_frames_as_video
+        save_frames_as_video(frames, output_path, fps=self.fps)
+        
+        # Basic transitions always consume exactly 1 slide
+        return 1
+
     def __repr__(self):
         return f"<LeftRightFold direction={self.direction} duration={self.duration}s fps={self.fps}>"
 

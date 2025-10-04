@@ -214,13 +214,25 @@ class Slideshow:
             # --- Render transitions ---
             self._log("")  # Newline before transition rendering
             transition_clips = []
-            for i in range(total_items - 1):
-                self._log(f"[Slideshow] Rendering transitions ({i+1}/{total_transitions})...{'\r' if i < total_transitions else '\n'}")
-                trans_out = self.working_dir / f"trans_{i:03}.mp4"
-                self.transition.render(self.slides[i], self.slides[i + 1], trans_out)
-                transition_clips.append((i, trans_out))
-                if self.progress_callback:
-                    self.progress_callback(total_items + i + 1, total_weighted_steps)
+            i = 0  # Slide index
+            j = 0  # Transition counter
+            while i < total_items - 1:
+                self._log(f"[Slideshow] Rendering transitions ({j+1}/{total_transitions})...{'\r' if j < total_transitions else '\n'}")
+                trans_out = self.working_dir / f"trans_{j:03}.mp4"
+                
+                # All transitions use the unified render method
+                slides_consumed = self.transition.render(i, self.slides, trans_out)
+                
+                # Only create transition if slides were consumed (0 = skip this transition)
+                if slides_consumed > 0:
+                    transition_clips.append((i, trans_out))
+                    if self.progress_callback:
+                        self.progress_callback(total_items + j + 1, total_weighted_steps)
+                    j += 1
+                    i += slides_consumed
+                else:
+                    # Skip this transition
+                    i += 1
 
             # --- Write concat file ---
             with self.concat_file.open("w") as f:

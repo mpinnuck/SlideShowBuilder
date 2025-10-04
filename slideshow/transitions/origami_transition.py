@@ -16,6 +16,7 @@ from slideshow.transitions.origami_fold_up_down import OrigamiFoldUp, OrigamiFol
 from slideshow.transitions.origami_fold_center import OrigamiFoldCenterHoriz, OrigamiFoldCenterVert
 from slideshow.transitions.origami_fold_slide import OrigamiFoldSlideLeft, OrigamiFoldSlideRight
 from slideshow.transitions.origami_fold_multi_lr import OrigamiFoldMultiLRLeft, OrigamiFoldMultiLRRight
+from slideshow.transitions.origami_fold_multi_slide import OrigamiFoldMultiSlide
 
 
 
@@ -28,7 +29,7 @@ class OrigamiTransition(BaseTransition):
             fps (int): Frames per second for rendering.
             fold (str|None): Force a specific fold direction ("left", "right", "up", "down", 
                              "centerhoriz", "centervert", "slide_left", "slide_right", 
-                             "multileft", "multiright"). If None, one is chosen randomly.
+                             "multileft", "multiright", "multislide"). If None, one is chosen randomly.
             easing (str): Easing function for smooth animation ("linear", "quad", "cubic", "back").
                          Default "quad" provides natural acceleration/deceleration.
             lighting (bool): Enable realistic directional lighting for depth and dimension.
@@ -36,7 +37,7 @@ class OrigamiTransition(BaseTransition):
         """
         super().__init__(duration=duration)
         self.name = "Origami"
-        self.description = "3D paper folding transition with multiple variations: basic (left/right/up/down), center (horiz/vert), slide, and multi-quarter progressive folds"
+        self.description = "3D paper folding transition with multiple variations: basic (left/right/up/down), center (horiz/vert), slide, multi-quarter progressive folds, and multi-slide preview"
         self.resolution = resolution
         self.fps = fps
         self.fold = fold  # optional forced fold direction
@@ -55,6 +56,7 @@ class OrigamiTransition(BaseTransition):
             "slide_right": OrigamiFoldSlideRight,
             "multileft": OrigamiFoldMultiLRLeft,
             "multiright": OrigamiFoldMultiLRRight,
+            "multislide": OrigamiFoldMultiSlide,
         }
 
     def get_requirements(self):
@@ -73,14 +75,17 @@ class OrigamiTransition(BaseTransition):
         else:
             return cls(duration=self.duration, resolution=self.resolution, fps=self.fps)
 
-    def render(self, from_slide, to_slide, output_path: Path):
+    def render(self, index: int, slides: list, output_path: Path) -> int:
         """
-        Render the Origami transition between two SlideItem instances.
+        Render the Origami transition using slides from the array.
 
         Args:
-            from_slide: SlideItem (PhotoSlide or VideoSlide)
-            to_slide:   SlideItem (PhotoSlide or VideoSlide)
+            index: Current slide index in the slideshow
+            slides: Array of all slides
             output_path: Path where the transition video should be saved
+            
+        Returns:
+            Number of slides consumed by this transition
         """
         if not self.is_available():
             raise RuntimeError(
@@ -92,4 +97,4 @@ class OrigamiTransition(BaseTransition):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         transition = self._select_transition()
-        return transition.render(from_slide, to_slide, output_path)
+        return transition.render(index, slides, output_path)

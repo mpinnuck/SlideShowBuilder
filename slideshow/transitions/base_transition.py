@@ -12,14 +12,20 @@ class BaseTransition(ABC):
         self.description = "Abstract base transition class"
 
     @abstractmethod
-    def render(self, from_slide, to_slide, output_path: Path):
+    def render(self, index: int, slides: list, output_path: Path) -> int:
         """
-        Render the transition between two **rendered slides**.
+        Render the transition using slides from the array.
 
         Args:
-            from_slide: SlideItem with ._rendered_clip set by render()
-            to_slide: SlideItem with ._rendered_clip set by render()
+            index: Current slide index in the slideshow
+            slides: Array of all slides in the slideshow
             output_path: Path where the transition video should be saved
+            
+        Returns:
+            Number of slides consumed by this transition:
+            - 0: Skip this transition (no video created)
+            - 1: Standard transition (consumed current slide)
+            - 2+: Multi-slide transition (consumed multiple slides)
         """
         raise NotImplementedError("Subclasses must implement render()")
 

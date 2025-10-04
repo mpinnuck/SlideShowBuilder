@@ -16,8 +16,14 @@ class FadeTransition(BaseTransition):
     def get_requirements(self) -> list:
         return ["ffmpeg"]
 
-    def render(self, from_slide, to_slide, output_path: Path):
-        """Render a crossfade transition between two rendered slide clips."""
+    def render(self, index: int, slides: list, output_path: Path) -> int:
+        """Render a crossfade transition between two slides from the slides array."""
+        if index + 1 >= len(slides):
+            raise ValueError(f"FadeTransition: Not enough slides for transition at index {index}")
+            
+        from_slide = slides[index]
+        to_slide = slides[index + 1]
+        
         self.ensure_output_dir(output_path)
 
         from_png = output_path.parent / "from.png"
@@ -46,4 +52,5 @@ class FadeTransition(BaseTransition):
                 f"FadeTransition failed:\nCommand: {' '.join(cmd)}\nError:\n{result.stderr}"
             )
 
-        return output_path
+        # Fade transition always consumes exactly 1 slide
+        return 1

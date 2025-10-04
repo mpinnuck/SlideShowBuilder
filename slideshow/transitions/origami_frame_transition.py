@@ -51,15 +51,22 @@ class OrigamiFrameTransition(BaseTransition, ABC):
         finally:
             ctx.release()
 
-    def render(self, from_slide, to_slide, output_path: Path):
+    def render(self, index: int, slides: list, output_path: Path) -> int:
         """
-        Public render API used by Slideshow.
+        Render method using slides from array.
         Converts SlideItem -> frames -> video file.
+        Returns number of slides consumed (default 1).
         """
+        if index + 1 >= len(slides):
+            raise ValueError(f"OrigamiFrameTransition: Not enough slides for transition at index {index}")
+            
+        from_slide = slides[index]
+        to_slide = slides[index + 1]
+        
         from_img = from_slide.get_from_image()
         to_img = to_slide.get_to_image()
 
         frames = self.render_frames(from_img, to_img)
         save_frames_as_video(frames, output_path, fps=self.fps)
 
-        return output_path
+        return 1  # Most origami transitions consume 1 slide
