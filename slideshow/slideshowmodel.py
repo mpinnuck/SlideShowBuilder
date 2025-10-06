@@ -62,7 +62,7 @@ class Slideshow:
 
         self.load_slides()
 
-        # Initialize FFmpeg cache under output folder for user control
+        # Configure FFmpeg cache under output folder for user control
         cache_enabled = self.config.get("ffmpeg_cache_enabled", True)
         if cache_enabled:
             cache_dir = self.config.get("ffmpeg_cache_dir")
@@ -71,7 +71,7 @@ class Slideshow:
                 output_folder = Path(self.config.get("output_folder", "media/output"))
                 cache_dir = output_folder / "working" / "ffmpeg_cache"
             
-            FFmpegCache.initialize(cache_dir)
+            FFmpegCache.configure(cache_dir)
             self._log(f"[FFmpegCache] Using cache directory: {cache_dir}")
             
             # Log initial cache stats if cache has existing content
@@ -137,6 +137,10 @@ class Slideshow:
         photo_count = 0
         video_count = 0
         multislide_count = 0
+        
+        # Log initial message
+        total_files = len(media_files)
+        self._log(f"[Slideshow] Loading {total_files} files...")
         
         for i, path in enumerate(media_files):
             # Skip files that were consumed by previous MultiSlides
@@ -207,6 +211,13 @@ class Slideshow:
                         self._log(f"[Slideshow] Last slide {path.name}: forcing full duration {final_duration:.2f}s")
                     self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution))
                     video_count += 1
+            
+            # Show progress every 10 files (overwriting the same line)
+            if (i + 1) % 10 == 0 or (i + 1) == total_files:
+                self._log(f"[Slideshow] Loaded {i + 1}/{total_files} files...\r")
+        
+        # Final newline after progress updates
+#        self._log("")
         
         # Log import summary
         total_input_files = len(media_files)

@@ -14,10 +14,15 @@ import os
 
 class FFmpegCache:
     """
-    Global cache for FFmpeg outputs to avoid expensive re-computation.
+    Global singleton cache for FFmpeg outputs to avoid expensive re-computation.
     
     Unlike GPU shader caching, this caches the actual output files produced
     by FFmpeg operations since FFmpeg is an external process, not compiled code.
+    
+    Usage:
+        1. Call configure(cache_dir) once at the start of export
+        2. All cache operations then work automatically with zero overhead
+        3. Can call configure() multiple times - it's idempotent
     
     Cache keys are based on:
     - Input file path and modification time
@@ -37,21 +42,42 @@ class FFmpegCache:
     _cache_dir: Optional[Path] = None
     _metadata: Dict[str, Any] = {}
     _enabled = True
+    _initialized = False
     
     @classmethod
-    def initialize(cls, cache_dir: Union[str, Path] = None):
-        """Initialize the cache directory and load metadata."""
-        if cache_dir is None:
-            # Use current working directory as fallback (better than home directory)
-            cache_dir = Path.cwd() / "ffmpeg_cache"
+    def configure(cls, cache_dir: Union[str, Path]):
+        """
+        Configure the cache with a directory path. Idempotent - safe to call multiple times.
+        Creates directories and loads metadata immediately.
         
-        cls._cache_dir = Path(cache_dir)
-        cls._cache_dir.mkdir(parents=True, exist_ok=True)
+        Args:
+            cache_dir: Path to the cache directory
+        """
+        cache_dir = Path(cache_dir)
         
-        # Create subdirectories
-        (cls._cache_dir / "clips").mkdir(exist_ok=True)
-        (cls._cache_dir / "frames").mkdir(exist_ok=True)
-        (cls._cache_dir / "temp").mkdir(exist_ok=True)
+        # If already configured with same directory, skip re-initialization
+        if cls._initialized and cls._cache_dir == cache_dir:
+            return
+        
+        # If reconfiguring with a different directory, reset state
+        if cls._cache_dir != cache_dir:
+            cls._cache_dir = cache_dir
+            cls._initialized = False
+            cls._metadata = {}
+        
+        try:
+            cls._cache_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create subdirectories
+            (cls._cache_dir / "clips").mkdir(exist_ok=True)
+            (cls._cache_dir / "frames").mkdir(exist_ok=True)
+            (cls._cache_dir / "temp").mkdir(exist_ok=True)
+        except (OSError, PermissionError) as e:
+            # If we can't create the cache directory, disable caching
+            print(f"[FFmpegCache] Warning: Could not create cache directory: {e}")
+            cls._enabled = False
+            cls._initialized = True  # Mark as "initialized" even if failed to prevent retries
+            return
         
         # Load or create metadata
         metadata_file = cls._cache_dir / "metadata.json"
@@ -67,6 +93,9 @@ class FFmpegCache:
         # Ensure stats section exists for older cache files
         if "stats" not in cls._metadata:
             cls._metadata["stats"] = {"hits": 0, "misses": 0}
+        
+        cls._initialized = True
+        cls._enabled = True
     
     @classmethod
     def _save_metadata(cls):
@@ -230,7 +259,8 @@ class FFmpegCache:
         if cls._cache_dir and cls._cache_dir.exists():
             shutil.rmtree(cls._cache_dir)
             cls._metadata = {"version": "1.0", "entries": {}, "stats": {"hits": 0, "misses": 0}}
-            cls.initialize(cls._cache_dir)
+            cls._initialized = False
+            cls.configure(cls._cache_dir)
     
     @classmethod
     def get_cache_entries_with_sources(cls) -> Dict[str, Any]:
@@ -366,7 +396,3 @@ class FFmpegCache:
         if entries_to_remove:
             cls._save_metadata()
             print(f"[FFmpegCache] Cleaned up {len(entries_to_remove)} old cache entries")
-
-
-# Initialize cache on module import
-FFmpegCache.initialize()

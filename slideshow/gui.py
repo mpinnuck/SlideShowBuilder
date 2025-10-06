@@ -1086,14 +1086,14 @@ class SettingsDialog:
         try:
             from slideshow.transitions.ffmpeg_cache import FFmpegCache
             
-            # Initialize cache with current settings to get accurate stats
+            # Configure cache with current settings to get accurate stats
             cache_dir = self.ffmpeg_cache_dir_var.get().strip()
             if not cache_dir:
                 # Use default location
                 output_folder = self.config_data.get("output_folder", "data/output")
                 cache_dir = f"{output_folder}/working/ffmpeg_cache"
             
-            FFmpegCache.initialize(cache_dir)
+            FFmpegCache.configure(cache_dir)
             stats = FFmpegCache.get_cache_stats()
             
             if stats.get("enabled", False):
@@ -1166,13 +1166,13 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
                 
-                # Initialize cache with current settings first
+                # Configure cache with current settings first
                 cache_dir = self.ffmpeg_cache_dir_var.get().strip()
                 if not cache_dir:
                     output_folder = self.config_data.get("output_folder", "data/output")
                     cache_dir = f"{output_folder}/working/ffmpeg_cache"
                 
-                FFmpegCache.initialize(cache_dir)
+                FFmpegCache.configure(cache_dir)
                 FFmpegCache.reset_stats()
                 
                 messagebox.showinfo("Statistics Reset", "Cache statistics have been reset successfully.")
@@ -1184,13 +1184,13 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
         try:
             from slideshow.transitions.ffmpeg_cache import FFmpegCache
             
-            # Initialize cache with current settings
+            # Configure cache with current settings
             cache_dir = self.ffmpeg_cache_dir_var.get().strip()
             if not cache_dir:
                 output_folder = self.config_data.get("output_folder", "data/output")
                 cache_dir = f"{output_folder}/working/ffmpeg_cache"
             
-            FFmpegCache.initialize(cache_dir)
+            FFmpegCache.configure(cache_dir)
             cache_data = FFmpegCache.get_cache_entries_with_sources()
             
             if not cache_data.get("enabled", False):

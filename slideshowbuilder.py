@@ -1,19 +1,33 @@
 '''
-    SlideshowBBuilder for building slideshows from photos and videos.
-
-    Setup Instructions:   
+Build commands:
 source .venv/bin/activate
-pip install -r requirements.txt
+pyinstaller -y "SlideShow Builder.spec"
 
 '''
 
-# Version information
-VERSION = "8.1.0"
 
+import os
+import sys
+import subprocess
 from slideshow.gui import GUI
 from slideshow.controller import SlideshowController
 
+VERSION = "8.2.0"
+
 if __name__ == "__main__":
+    # Bring app to foreground on macOS (fail silently if error)
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(
+                ['osascript', '-e', 
+                 f'tell application "System Events" to set frontmost of the first process whose unix id is {os.getpid()} to true'],
+                capture_output=True,
+                timeout=1
+            )
+        except Exception:
+            pass  # Not critical, continue anyway
+    
     controller = SlideshowController()
     app = GUI(controller, VERSION)
     app.mainloop()
+
