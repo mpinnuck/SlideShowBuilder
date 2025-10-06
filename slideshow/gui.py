@@ -10,6 +10,17 @@ class GUI(tk.Tk):
     def __init__(self, controller, version="1.0.0"):
         super().__init__()
         self.title(f"Slideshow Builder v{version}")
+        
+        # Set application icon
+        try:
+            icon_path = Path(__file__).parent.parent / "assets" / "slideshowbuilder.png"
+            if icon_path.exists():
+                icon_photo = tk.PhotoImage(file=str(icon_path))
+                self.iconphoto(True, icon_photo)
+        except Exception as e:
+            # Silently continue if icon can't be loaded
+            pass
+        
         self.controller = controller
         self.config_data = load_config()
         self.create_widgets()

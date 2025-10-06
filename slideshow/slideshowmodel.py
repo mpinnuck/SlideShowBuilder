@@ -168,7 +168,6 @@ class Slideshow:
                         fps=fps
                     )
                     self.slides.append(multi_slide)
-                    self._log(f"[Slideshow] Created multislide from: {next_files[0].name}, {next_files[1].name}, {next_files[2].name}")
                     
                     # Count the 3 photos consumed by the multislide
                     photo_count += 3

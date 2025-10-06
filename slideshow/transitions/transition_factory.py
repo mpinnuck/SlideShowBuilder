@@ -36,7 +36,8 @@ class TransitionFactory:
             origami_kwargs = {
                 'easing': config.get('origami_easing', 'quad'),
                 'lighting': config.get('origami_lighting', True),
-                'fold': config.get('origami_fold', '')  # Empty string means random
+                'fold': config.get('origami_fold', ''),  # Empty string means deterministic
+                'project_name': config.get('project_name', 'default')
             }
 
         TRANSITIONS = {
