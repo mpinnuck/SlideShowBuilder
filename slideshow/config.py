@@ -17,6 +17,9 @@ DEFAULT_CONFIG = {
     "origami_lighting": True,
     "origami_fold": "",  # Empty means random
     
+    # Multislide settings
+    "multislide_frequency": 10,  # Create composite slide every N slides (0 = disabled)
+    
     # Intro title settings
     "intro_title": {
         "enabled": False,

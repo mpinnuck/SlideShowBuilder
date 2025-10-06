@@ -8,7 +8,7 @@ pip install -r requirements.txt
 '''
 
 # Version information
-VERSION = "7.0.0"
+VERSION = "8.0.0"
 
 from slideshow.gui import GUI
 from slideshow.controller import SlideshowController

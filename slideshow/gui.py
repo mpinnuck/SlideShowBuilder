@@ -4,6 +4,7 @@ import threading
 import sys
 from pathlib import Path
 from slideshow.config import load_config, save_config
+from slideshow.transitions.ffmpeg_cache import FFmpegCache
 
 class GUI(tk.Tk):
     def __init__(self, controller, version="1.0.0"):
@@ -91,6 +92,13 @@ class GUI(tk.Tk):
         self.video_dur_var = tk.IntVar(value=self.config_data.get("video_duration", 10))
         self.video_dur_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.video_dur_var, width=5).grid(row=5, column=1, sticky="w", padx=(5, 0))
+
+        # MultiSlide Frequency (positioned right after Video Duration in same column area)
+        ttk.Label(self, text="MultiSlide Freq:").grid(row=5, column=1, sticky="w", padx=(80, 5))
+        self.multislide_freq_var = tk.IntVar(value=self.config_data.get("multislide_frequency", 10))
+        self.multislide_freq_var.trace_add('write', lambda *args: self._auto_save_config())
+        ttk.Entry(self, textvariable=self.multislide_freq_var, width=5).grid(row=5, column=1, sticky="w", padx=(200, 0))
+        ttk.Label(self, text="(0=off)", font=("TkDefaultFont", 8)).grid(row=5, column=1, sticky="w", padx=(270, 0))
 
         ttk.Label(self, text="Transition Duration (s):").grid(row=6, column=0, sticky="e")
         self.trans_dur_var = tk.IntVar(value=self.config_data.get("transition_duration", 1))
@@ -275,10 +283,19 @@ class GUI(tk.Tk):
         self.update_idletasks()
 
     def select_input_folder(self):
+        old_folder = self.input_var.get()
         folder = filedialog.askdirectory()
-        if folder:
+        if folder and folder != old_folder:
             self.input_var.set(folder)
             self.log_message(f"Input folder selected: {folder}")
+            
+            # Clear FFmpeg cache when input folder changes
+            if old_folder:  # Only clear if there was a previous folder
+                try:
+                    FFmpegCache.clear_cache()
+                    self.log_message("[FFmpegCache] Cache cleared due to input folder change")
+                except Exception as e:
+                    self.log_message(f"[FFmpegCache] Warning: Failed to clear cache: {e}")
 
     def select_output_folder(self):
         folder = filedialog.askdirectory()
@@ -355,6 +372,18 @@ class GUI(tk.Tk):
                 self.log_message(error_msg)
                 return default_value
         
+        def safe_get_int(var, field_name, default_value):
+            try:
+                # Get raw string value first
+                raw_value = var._tk.globalgetvar(var._name)
+                if raw_value == "" or raw_value is None:
+                    return default_value
+                return int(raw_value)
+            except (ValueError, TypeError, tk.TclError, AttributeError) as e:
+                error_msg = f"Invalid {field_name} - using previous value ({default_value})"
+                self.log_message(error_msg)
+                return default_value
+        
         # Get numeric values with validation
         config["photo_duration"] = safe_get_float(
             self.photo_dur_var, "photo duration", 
@@ -371,11 +400,28 @@ class GUI(tk.Tk):
             self.config_data.get("transition_duration", 1.0)
         )
         
+        config["multislide_frequency"] = safe_get_int(
+            self.multislide_freq_var, "multislide frequency",
+            self.config_data.get("multislide_frequency", 10)
+        )
+        
         return config
     
     def _auto_save_config(self):
         """Automatically update and save config when controls change"""
-        self.config_data.update(self._get_current_config())
+        old_input_folder = self.config_data.get("input_folder", "")
+        new_config = self._get_current_config()
+        new_input_folder = new_config.get("input_folder", "")
+        
+        # Check if input folder changed and clear cache if so
+        if old_input_folder and new_input_folder != old_input_folder:
+            try:
+                FFmpegCache.clear_cache()
+                self.log_message("[FFmpegCache] Cache cleared due to input folder change")
+            except Exception as e:
+                self.log_message(f"[FFmpegCache] Warning: Failed to clear cache: {e}")
+        
+        self.config_data.update(new_config)
         save_config(self.config_data)
         self._check_play_button_state()  # Update Play button state
 
@@ -424,14 +470,14 @@ class GUI(tk.Tk):
                         self.log_message("Slideshow should start playing automatically")
                     else:
                         # Fallback to default player
-                        subprocess.run(['open', str(output_path)])
+                        subprocess.run(['open', str(output_path)], capture_output=True)
                         self.log_message("Opened with default video player")
                         
                 elif os.name == 'nt':  # Windows
                     os.startfile(str(output_path))
                     self.log_message("Slideshow opened in default player")
                 else:  # Linux
-                    subprocess.run(['xdg-open', str(output_path)])
+                    subprocess.run(['xdg-open', str(output_path)], capture_output=True)
                     self.log_message("Slideshow opened in default player")
                     
             except Exception as e:
@@ -439,11 +485,11 @@ class GUI(tk.Tk):
                 # Final fallback
                 try:
                     if sys.platform == 'darwin':
-                        subprocess.run(['open', str(output_path)])
+                        subprocess.run(['open', str(output_path)], capture_output=True)
                     elif os.name == 'nt':
                         os.startfile(str(output_path))
                     else:
-                        subprocess.run(['xdg-open', str(output_path)])
+                        subprocess.run(['xdg-open', str(output_path)], capture_output=True)
                     self.log_message("Slideshow opened with basic method")
                 except Exception as e2:
                     self.log_message(f"All methods failed: {e2}")
@@ -515,13 +561,13 @@ class SettingsDialog:
         # Create dialog window
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Slideshow Settings")
-        self.dialog.geometry("800x600")  # Increased width from 600 to 800
+        self.dialog.geometry("950x700")  # Increased width from 800 to 950 for cache buttons
         self.dialog.resizable(True, True)
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
         # Set minimum size to prevent clipping
-        self.dialog.minsize(750, 500)
+        self.dialog.minsize(900, 600)  # Increased minimum width from 750 to 900
         
         # Center the dialog
         self._center_dialog()
@@ -892,6 +938,48 @@ class SettingsDialog:
         self.keep_frames_var = tk.BooleanVar(value=self.config_data.get("keep_intermediate_frames", False))
         ttk.Checkbutton(scrollable_frame, text="Keep intermediate frames for debugging", 
                        variable=self.keep_frames_var).grid(row=10, column=0, columnspan=2, sticky="w")
+        
+        # FFmpeg Cache Settings
+        ttk.Separator(scrollable_frame, orient="horizontal").grid(row=11, column=0, columnspan=2, sticky="ew", pady=20)
+        ttk.Label(scrollable_frame, text="FFmpeg Cache:", font=("Arial", 12, "bold")).grid(row=12, column=0, sticky="w", pady=(0, 10))
+        
+        self.ffmpeg_cache_enabled_var = tk.BooleanVar(value=self.config_data.get("ffmpeg_cache_enabled", True))
+        ttk.Checkbutton(scrollable_frame, text="Enable FFmpeg caching (improves performance)", 
+                       variable=self.ffmpeg_cache_enabled_var,
+                       command=self._toggle_cache_controls).grid(row=13, column=0, columnspan=2, sticky="w")
+        
+        # Cache Directory
+        ttk.Label(scrollable_frame, text="Cache Directory:").grid(row=14, column=0, sticky="w", pady=(10, 0))
+        self.ffmpeg_cache_dir_var = tk.StringVar(value=self.config_data.get("ffmpeg_cache_dir", ""))
+        cache_frame = ttk.Frame(scrollable_frame)
+        cache_frame.grid(row=14, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
+        self.cache_dir_entry = ttk.Entry(cache_frame, textvariable=self.ffmpeg_cache_dir_var, width=30)
+        self.cache_dir_entry.grid(row=0, column=0)
+        self.cache_browse_btn = ttk.Button(cache_frame, text="Browse", command=self._browse_cache_dir)
+        self.cache_browse_btn.grid(row=0, column=1, padx=(5, 0))
+        
+        # Cache info and management
+        cache_info_frame = ttk.Frame(scrollable_frame)
+        cache_info_frame.grid(row=15, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ttk.Label(cache_info_frame, text="(Leave empty to use default: output_folder/working/ffmpeg_cache)",
+                 foreground="gray").grid(row=0, column=0, sticky="w")
+        
+        # Cache management buttons
+        cache_mgmt_frame = ttk.Frame(scrollable_frame)
+        cache_mgmt_frame.grid(row=16, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self.cache_stats_btn = ttk.Button(cache_mgmt_frame, text="View Cache Stats", command=self._show_cache_stats)
+        self.cache_stats_btn.grid(row=0, column=0, padx=(0, 10))
+        self.cache_browse_btn2 = ttk.Button(cache_mgmt_frame, text="Browse Cache Contents", command=self._browse_cache_contents)
+        self.cache_browse_btn2.grid(row=0, column=1, padx=(0, 10))
+        self.cache_clear_btn = ttk.Button(cache_mgmt_frame, text="Clear Cache", command=self._clear_cache)
+        self.cache_clear_btn.grid(row=0, column=2, padx=(0, 10))
+        self.cache_cleanup_btn = ttk.Button(cache_mgmt_frame, text="Cleanup Old Entries", command=self._cleanup_cache)
+        self.cache_cleanup_btn.grid(row=0, column=3, padx=(0, 10))
+        self.cache_reset_stats_btn = ttk.Button(cache_mgmt_frame, text="Reset Stats", command=self._reset_cache_stats)
+        self.cache_reset_stats_btn.grid(row=0, column=4)
+        
+        # Set initial state of cache controls
+        self._toggle_cache_controls()
     
     def _get_transition_options(self):
         """Get available transition options with descriptions"""
@@ -962,6 +1050,413 @@ class SettingsDialog:
         if directory:
             self.temp_dir_var.set(directory)
     
+    def _browse_cache_dir(self):
+        """Browse for FFmpeg cache directory"""
+        from tkinter import filedialog
+        directory = filedialog.askdirectory()
+        if directory:
+            self.ffmpeg_cache_dir_var.set(directory)
+    
+    def _toggle_cache_controls(self):
+        """Enable/disable cache controls based on cache enabled checkbox"""
+        enabled = self.ffmpeg_cache_enabled_var.get()
+        state = "normal" if enabled else "disabled"
+        
+        self.cache_dir_entry.config(state=state)
+        self.cache_browse_btn.config(state=state)
+        self.cache_stats_btn.config(state=state)
+        self.cache_browse_btn2.config(state=state)
+        self.cache_clear_btn.config(state=state)
+        self.cache_cleanup_btn.config(state=state)
+        self.cache_reset_stats_btn.config(state=state)
+    
+    def _show_cache_stats(self):
+        """Show cache statistics in a dialog"""
+        try:
+            from slideshow.transitions.ffmpeg_cache import FFmpegCache
+            
+            # Initialize cache with current settings to get accurate stats
+            cache_dir = self.ffmpeg_cache_dir_var.get().strip()
+            if not cache_dir:
+                # Use default location
+                output_folder = self.config_data.get("output_folder", "data/output")
+                cache_dir = f"{output_folder}/working/ffmpeg_cache"
+            
+            FFmpegCache.initialize(cache_dir)
+            stats = FFmpegCache.get_cache_stats()
+            
+            if stats.get("enabled", False):
+                total_requests = stats.get('total_requests', 0)
+                hit_rate = stats.get('hit_rate_percent', 0)
+                operations = stats.get('operations', {})
+                
+                # Always show performance info section
+                performance_info = f"""
+Performance Statistics:
+- Cache Hits: {stats.get('cache_hits', 0)}
+- Cache Misses: {stats.get('cache_misses', 0)}
+- Hit Rate: {hit_rate}% ({total_requests} total requests)
+
+Cache Effectiveness: {'Excellent' if hit_rate >= 80 else 'Good' if hit_rate >= 50 else 'Poor' if hit_rate >= 20 else 'Very Poor' if total_requests > 10 else 'No usage data yet'}"""
+                
+                operations_info = ""
+                if operations:
+                    operations_info = f"""
+Cached Operations:
+""" + "\n".join([f"- {op}: {count} entries" for op, count in operations.items()])
+                
+                message = f"""FFmpeg Cache Statistics:
+                
+Cache Directory: {stats['cache_dir']}
+Total Entries: {stats['total_entries']}
+- Video Clips: {stats['clip_count']}
+- Extracted Frames: {stats['frame_count']}
+Total Size: {stats['total_size_mb']:.1f} MB{operations_info}{performance_info}
+
+Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
+            else:
+                message = "FFmpeg cache is disabled."
+                
+            messagebox.showinfo("Cache Statistics", message)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to get cache statistics:\\n{str(e)}")
+    
+    def _clear_cache(self):
+        """Clear the entire FFmpeg cache"""
+        result = messagebox.askyesno("Clear Cache", 
+                                   "Are you sure you want to clear the entire FFmpeg cache?\\n"
+                                   "This will delete all cached video clips and frames.")
+        if result:
+            try:
+                from slideshow.transitions.ffmpeg_cache import FFmpegCache
+                FFmpegCache.clear_cache()
+                messagebox.showinfo("Cache Cleared", "FFmpeg cache has been cleared successfully.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to clear cache:\\n{str(e)}")
+    
+    def _cleanup_cache(self):
+        """Clean up old cache entries"""
+        result = messagebox.askyesno("Cleanup Cache", 
+                                   "Remove cache entries older than 30 days?")
+        if result:
+            try:
+                from slideshow.transitions.ffmpeg_cache import FFmpegCache
+                FFmpegCache.cleanup_old_entries(30)
+                messagebox.showinfo("Cache Cleaned", "Old cache entries have been cleaned up successfully.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to cleanup cache:\\n{str(e)}")
+    
+    def _reset_cache_stats(self):
+        """Reset cache hit/miss statistics"""
+        result = messagebox.askyesno("Reset Cache Statistics", 
+                                   "Reset cache hit/miss statistics to zero?\\n\\nThis will not affect cached files, only the performance counters.")
+        if result:
+            try:
+                from slideshow.transitions.ffmpeg_cache import FFmpegCache
+                
+                # Initialize cache with current settings first
+                cache_dir = self.ffmpeg_cache_dir_var.get().strip()
+                if not cache_dir:
+                    output_folder = self.config_data.get("output_folder", "data/output")
+                    cache_dir = f"{output_folder}/working/ffmpeg_cache"
+                
+                FFmpegCache.initialize(cache_dir)
+                FFmpegCache.reset_stats()
+                
+                messagebox.showinfo("Statistics Reset", "Cache statistics have been reset successfully.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to reset cache statistics:\\n{str(e)}")
+    
+    def _browse_cache_contents(self):
+        """Show detailed cache contents browser"""
+        try:
+            from slideshow.transitions.ffmpeg_cache import FFmpegCache
+            
+            # Initialize cache with current settings
+            cache_dir = self.ffmpeg_cache_dir_var.get().strip()
+            if not cache_dir:
+                output_folder = self.config_data.get("output_folder", "data/output")
+                cache_dir = f"{output_folder}/working/ffmpeg_cache"
+            
+            FFmpegCache.initialize(cache_dir)
+            cache_data = FFmpegCache.get_cache_entries_with_sources()
+            
+            if not cache_data.get("enabled", False):
+                messagebox.showinfo("Cache Browser", "FFmpeg cache is disabled.")
+                return
+            
+            # Create cache browser window
+            browser_window = tk.Toplevel(self.parent)
+            browser_window.title("Cache Contents Browser")
+            browser_window.geometry("900x600")
+            browser_window.transient(self.parent)
+            browser_window.grab_set()
+            
+            # Center the window on the desktop
+            browser_window.update_idletasks()  # Ensure window size is calculated
+            window_width = 900
+            window_height = 600
+            
+            # Get screen dimensions
+            screen_width = browser_window.winfo_screenwidth()
+            screen_height = browser_window.winfo_screenheight()
+            
+            # Calculate center position
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
+            
+            # Set the centered position
+            browser_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+            
+            # Main frame with scrollbar
+            main_frame = ttk.Frame(browser_window)
+            main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            # Info label
+            cache_entries = cache_data.get('entries', [])
+            clips = [e for e in cache_entries if e['type'] == 'clip']
+            frames = [e for e in cache_entries if e['type'] == 'frame']
+            
+            info_label = ttk.Label(main_frame, 
+                                 text=f"Cache Contents: {len(clips)} clips, {len(frames)} frames ({cache_data['total_entries']} total)",
+                                 font=("Arial", 12, "bold"))
+            info_label.pack(pady=(0, 10))
+            
+            # Create notebook for tabs
+            notebook = ttk.Notebook(main_frame)
+            notebook.pack(fill=tk.BOTH, expand=True)
+            
+            # Create tabs for clips and frames
+            clips_frame = ttk.Frame(notebook)
+            frames_frame = ttk.Frame(notebook)
+            
+            notebook.add(clips_frame, text=f"Video Clips ({len(clips)})")
+            notebook.add(frames_frame, text=f"Extracted Frames ({len(frames)})")
+            
+            # Function to create treeview for each tab
+            def create_cache_tree(parent_frame, entries, show_frame_number=False):
+                # Create frame for treeview and scrollbars (using grid)
+                tree_frame = ttk.Frame(parent_frame)
+                tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+                
+                # Create treeview for cache entries
+                if show_frame_number:
+                    columns = ('Source File', 'Operation', 'Frame #', 'Size (MB)', 'Cache File')
+                else:
+                    columns = ('Source File', 'Operation', 'Duration', 'Size (MB)', 'Cache File')
+                
+                tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=12)
+                
+                # Configure columns
+                tree.heading('Source File', text='Source File')
+                tree.heading('Operation', text='Operation')
+                if show_frame_number:
+                    tree.heading('Frame #', text='Frame #')
+                else:
+                    tree.heading('Duration', text='Duration (s)')
+                tree.heading('Size (MB)', text='Size (MB)')
+                tree.heading('Cache File', text='Cache File')
+                
+                tree.column('Source File', width=200)
+                tree.column('Operation', width=150)
+                if show_frame_number:
+                    tree.column('Frame #', width=80)
+                else:
+                    tree.column('Duration', width=80)
+                tree.column('Size (MB)', width=80)
+                tree.column('Cache File', width=300)
+                
+                # Add scrollbars
+                v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+                h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=tree.xview)
+                tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+                
+                # Grid treeview and scrollbars within tree_frame
+                tree.grid(row=0, column=0, sticky='nsew')
+                v_scrollbar.grid(row=0, column=1, sticky='ns')
+                h_scrollbar.grid(row=1, column=0, sticky='ew')
+                
+                tree_frame.grid_rowconfigure(0, weight=1)
+                tree_frame.grid_columnconfigure(0, weight=1)
+                
+                # Populate tree with cache entries
+                for entry in entries:
+                    if show_frame_number:
+                        # Extract frame number from parameters if available
+                        frame_num = "N/A"
+                        if 'parameters' in entry and 'timestamp' in entry['parameters']:
+                            frame_num = f"{entry['parameters']['timestamp']:.2f}s"
+                        
+                        tree.insert('', tk.END, values=(
+                            entry['source_file'],
+                            entry['operation'],
+                            frame_num,
+                            entry['size_mb'],
+                            entry['cache_key'] + '.png'
+                        ))
+                    else:
+                        # Extract duration from parameters if available
+                        duration = "N/A"
+                        if 'parameters' in entry and 'duration' in entry['parameters']:
+                            duration = f"{entry['parameters']['duration']:.1f}"
+                        
+                        tree.insert('', tk.END, values=(
+                            entry['source_file'],
+                            entry['operation'],
+                            duration,
+                            entry['size_mb'],
+                            entry['cache_key'] + '.mp4'
+                        ))
+                
+                return tree
+            
+            # Create trees for each tab
+            clips_tree = create_cache_tree(clips_frame, clips, show_frame_number=False)
+            frames_tree = create_cache_tree(frames_frame, frames, show_frame_number=True)
+            
+            # Details frame
+            details_frame = ttk.LabelFrame(main_frame, text="Entry Details", padding=10)
+            details_frame.pack(fill=tk.BOTH, expand=False, pady=(10, 0))
+            
+            details_text = tk.Text(details_frame, height=8, width=80, wrap=tk.WORD)
+            details_scrollbar = ttk.Scrollbar(details_frame, orient=tk.VERTICAL, command=details_text.yview)
+            details_text.configure(yscrollcommand=details_scrollbar.set)
+            details_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            details_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            # Handle tree selection for both trees
+            def on_tree_select(event):
+                # Get the tree that triggered the event
+                selected_tree = event.widget
+                selection = selected_tree.selection()
+                if selection:
+                    item = selected_tree.item(selection[0])
+                    source_file = item['values'][0]
+                    
+                    # Clear selection from the other tree
+                    if selected_tree == clips_tree:
+                        frames_tree.selection_remove(frames_tree.selection())
+                    else:
+                        clips_tree.selection_remove(clips_tree.selection())
+                    
+                    # Find the full entry details
+                    for entry in cache_data.get('entries', []):
+                        if entry['source_file'] == source_file:
+                            details = f"""Source File: {entry['source_file']}
+Full Source Path: {entry['source_path']}
+Operation: {entry['operation']}
+Type: {entry['type']}
+Size: {entry['size_mb']} MB
+Cache Key: {entry['cache_key']}
+Cached File: {entry['cached_file']}
+
+Parameters:
+"""
+                            for key, value in entry['params'].items():
+                                details += f"  {key}: {value}\n"
+                            
+                            details_text.delete(1.0, tk.END)
+                            details_text.insert(1.0, details)
+                            break
+            
+            # Handle double-click to view
+            def on_double_click(event):
+                # Get the tree that triggered the event
+                selected_tree = event.widget
+                selection = selected_tree.selection()
+                
+                if not selection:
+                    return
+                
+                try:
+                    item = selected_tree.item(selection[0])
+                    source_file = item['values'][0]
+                    
+                    # Find the entry details
+                    for entry in cache_data.get('entries', []):
+                        if entry['source_file'] == source_file:
+                            cache_file_path = entry['cached_file']
+                            
+                            if entry['type'] == 'clip':
+                                # Open video file with default player
+                                import subprocess
+                                subprocess.run(['open', cache_file_path], check=True)
+                            else:
+                                # Open image file with default viewer
+                                import subprocess
+                                subprocess.run(['open', cache_file_path], check=True)
+                            break
+                    else:
+                        messagebox.showerror("Error", f"Cache file not found for: {source_file}")
+                        
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to open cache file:\n{str(e)}")
+            
+            # Bind selection and double-click events to both trees
+            clips_tree.bind('<<TreeviewSelect>>', on_tree_select)
+            frames_tree.bind('<<TreeviewSelect>>', on_tree_select)
+            clips_tree.bind('<Double-1>', on_double_click)
+            frames_tree.bind('<Double-1>', on_double_click)
+            
+            # Add View button for selected entry
+            def view_selected():
+                # Determine which tree has a selection
+                clips_selection = clips_tree.selection()
+                frames_selection = frames_tree.selection()
+                
+                selected_tree = None
+                selection = None
+                
+                if clips_selection:
+                    selected_tree = clips_tree
+                    selection = clips_selection
+                elif frames_selection:
+                    selected_tree = frames_tree
+                    selection = frames_selection
+                
+                if not selection:
+                    messagebox.showinfo("No Selection", "Please select a cache entry to view.")
+                    return
+                
+                try:
+                    item = selected_tree.item(selection[0])
+                    source_file = item['values'][0]
+                    
+                    # Find the entry details
+                    for entry in cache_data.get('entries', []):
+                        if entry['source_file'] == source_file:
+                            cache_file_path = entry['cached_file']
+                            
+                            if entry['type'] == 'clip':
+                                # Open video file with default player
+                                import subprocess
+                                subprocess.run(['open', cache_file_path], check=True)
+                            else:
+                                # Open image file with default viewer
+                                import subprocess
+                                subprocess.run(['open', cache_file_path], check=True)
+                            break
+                    else:
+                        messagebox.showerror("Error", f"Cache file not found for: {source_file}")
+                        
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to open cache file:\n{str(e)}")
+            
+            # Button frame
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(pady=(10, 0))
+            
+            view_btn = ttk.Button(button_frame, text="View Selected", command=view_selected)
+            view_btn.pack(side=tk.LEFT, padx=(0, 10))
+            
+            # Close button
+            close_btn = ttk.Button(button_frame, text="Close", command=browser_window.destroy)
+            close_btn.pack(side=tk.LEFT)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to browse cache contents:\\n{str(e)}")
+    
     def _apply_settings(self):
         """Apply current settings to config"""
         # Basic transition settings
@@ -1002,6 +1497,10 @@ class SettingsDialog:
         self.config_data["temp_directory"] = self.temp_dir_var.get()
         self.config_data["auto_cleanup"] = self.auto_cleanup_var.get()
         self.config_data["keep_intermediate_frames"] = self.keep_frames_var.get()
+        
+        # FFmpeg cache settings
+        self.config_data["ffmpeg_cache_enabled"] = self.ffmpeg_cache_enabled_var.get()
+        self.config_data["ffmpeg_cache_dir"] = self.ffmpeg_cache_dir_var.get().strip()
         
         # Update parent's config and GUI
         self.parent.config_data = self.config_data

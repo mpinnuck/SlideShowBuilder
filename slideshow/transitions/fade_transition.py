@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 from .base_transition import BaseTransition
+from .ffmpeg_cache import FFmpegCache
 # (Optional) only for type hints:
 # from slideshow.slides.slide_item import SlideItem
 
@@ -23,6 +24,31 @@ class FadeTransition(BaseTransition):
             
         from_slide = slides[index]
         to_slide = slides[index + 1]
+        
+        # Create cache key based on the transition parameters and involved slides
+        from_clip = from_slide.get_rendered_clip()
+        to_clip = to_slide.get_rendered_clip()
+        
+        # Use a virtual path combining both slides for cache key
+        virtual_path = Path(f"transition_{from_clip.stem}_to_{to_clip.stem}")
+        
+        cache_params = {
+            "operation": "fade_transition",
+            "duration": self.duration,
+            "from_slide": str(from_clip.absolute()),
+            "to_slide": str(to_clip.absolute()),
+            "from_mtime": from_clip.stat().st_mtime if from_clip.exists() else 0,
+            "to_mtime": to_clip.stat().st_mtime if to_clip.exists() else 0,
+            "fps": 30  # Fixed for transitions
+        }
+        
+        # Check cache first
+        cached_transition = FFmpegCache.get_cached_clip(virtual_path, cache_params)
+        if cached_transition:
+            # Copy cached transition to output path
+            import shutil
+            shutil.copy2(cached_transition, output_path)
+            return 1
         
         self.ensure_output_dir(output_path)
 
@@ -49,8 +75,11 @@ class FadeTransition(BaseTransition):
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode != 0:
             raise RuntimeError(
-                f"FadeTransition failed:\nCommand: {' '.join(cmd)}\nError:\n{result.stderr}"
+                f"FadeTransition failed:\\nCommand: {' '.join(cmd)}\\nError:\\n{result.stderr}"
             )
+
+        # Store result in cache for future use
+        FFmpegCache.store_clip(virtual_path, cache_params, output_path)
 
         # Fade transition always consumes exactly 1 slide
         return 1

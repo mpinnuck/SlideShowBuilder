@@ -2,7 +2,7 @@
 import re
 import shutil
 import subprocess
-import random
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -13,6 +13,7 @@ from slideshow.transitions.utils import get_video_duration
 from slideshow.config import DEFAULT_CONFIG
 from slideshow.transitions.transition_factory import TransitionFactory
 from slideshow.transitions.intro_title import IntroTitle
+from slideshow.transitions.ffmpeg_cache import FFmpegCache
 
 
 class Slideshow:
@@ -30,7 +31,13 @@ class Slideshow:
         if self.working_dir.exists():
             self._log(f"[Slideshow] Cleaning existing working dir: {self.working_dir}")
             try:
-                shutil.rmtree(self.working_dir)
+                # Clean everything except ffmpeg_cache directory
+                for item in self.working_dir.iterdir():
+                    if item.name != "ffmpeg_cache":
+                        if item.is_dir():
+                            shutil.rmtree(item)
+                        else:
+                            item.unlink()
             except Exception as e:
                 self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
         self.working_dir.mkdir(parents=True, exist_ok=True)
@@ -54,6 +61,27 @@ class Slideshow:
         )
 
         self.load_slides()
+
+        # Initialize FFmpeg cache under output folder for user control
+        cache_enabled = self.config.get("ffmpeg_cache_enabled", True)
+        if cache_enabled:
+            cache_dir = self.config.get("ffmpeg_cache_dir")
+            if not cache_dir:
+                # Default to output_folder/working/ffmpeg_cache
+                output_folder = Path(self.config.get("output_folder", "media/output"))
+                cache_dir = output_folder / "working" / "ffmpeg_cache"
+            
+            FFmpegCache.initialize(cache_dir)
+            self._log(f"[FFmpegCache] Using cache directory: {cache_dir}")
+            
+            # Log initial cache stats if cache has existing content
+            cache_stats = FFmpegCache.get_cache_stats()
+            if cache_stats.get("total_entries", 0) > 0:
+                self._log(f"[FFmpegCache] Loaded cache: {cache_stats['total_entries']} entries, "
+                         f"{cache_stats['total_size_mb']:.1f} MB")
+        else:
+            FFmpegCache.enable(False)
+            self._log("[FFmpegCache] Caching disabled by configuration")
 
     # -------------------------------
     # Logging helper
@@ -99,13 +127,63 @@ class Slideshow:
             self._log(f"[Slideshow] Input folder not found: {input_folder}")
             return
 
+        # Get multislide frequency setting
+        multislide_frequency = self.config.get("multislide_frequency", 0)
+        
         media_files = sorted(input_folder.glob("*"))
+        skip_until = 0  # Track files consumed by MultiSlides
+        
+        # Counters for import summary
+        photo_count = 0
+        video_count = 0
+        multislide_count = 0
+        
         for i, path in enumerate(media_files):
+            # Skip files that were consumed by previous MultiSlides
+            if i < skip_until:
+                continue
+                
             ext = path.suffix.lower()
+            
+            # Check if we should create a multislide at this position
+            if (multislide_frequency > 0 and 
+                len(self.slides) > 0 and  # Not the first slide
+                (len(self.slides) + 1) % multislide_frequency == 0 and  # Hit frequency
+                i + 2 < len(media_files) and  # Have enough files left
+                ext in (".jpg", ".jpeg", ".png")):  # Current file is image
+                
+                # Check if next 2 files are also images
+                next_files = media_files[i:i+3]
+                if all(f.suffix.lower() in (".jpg", ".jpeg", ".png") for f in next_files):
+                    # Create MultiSlide from 3 consecutive image files
+                    resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
+                    fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
+                    
+                    from slideshow.slides.multi_slide import MultiSlide
+                    multi_slide = MultiSlide(
+                        i=i,
+                        media_files=media_files,
+                        duration=self.config["photo_duration"],
+                        resolution=resolution,
+                        fps=fps
+                    )
+                    self.slides.append(multi_slide)
+                    self._log(f"[Slideshow] Created multislide from: {next_files[0].name}, {next_files[1].name}, {next_files[2].name}")
+                    
+                    # Count the 3 photos consumed by the multislide
+                    photo_count += 3
+                    multislide_count += 1
+                    
+                    # Skip the files consumed by the multislide
+                    skip_until = i + multi_slide.get_slide_count()
+                    continue
+            
+            # Process single file normally
             if ext in (".jpg", ".jpeg", ".png"):
                 resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
                 fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
                 self.slides.append(PhotoSlide(path, self.config["photo_duration"], fps=fps, resolution=resolution))
+                photo_count += 1
             elif ext in (".mp4", ".mov"):
                 video_duration_setting = self.config.get("video_duration", 5.0)
                 if video_duration_setting == 0:
@@ -123,14 +201,31 @@ class Slideshow:
                 if video_duration_setting == -1:
                     self._log(f"[Slideshow] Using full duration for {path.name}: {actual_duration:.2f}s")
                     self.slides.append(VideoSlide(path, actual_duration, fps=fps, resolution=resolution))
+                    video_count += 1
                 else:
                     final_duration = actual_duration if i == len(media_files) - 1 else min(video_duration_setting, actual_duration)
                     if i == len(media_files) - 1:
                         self._log(f"[Slideshow] Last slide {path.name}: forcing full duration {final_duration:.2f}s")
                     self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution))
-
+                    video_count += 1
+        
+        # Log import summary
+        total_input_files = len(media_files)
+        total_slides = len(self.slides)
+        single_photo_slides = (photo_count - (multislide_count * 3))  # Photos not in MultiSlides
+        
+        self._log(f"[Slideshow] Importing {total_input_files} files → {total_slides} slides: {single_photo_slides} photo, {video_count} video, {multislide_count} multi")
+        
         # Removed self.update_transitions() from here to decouple transitions from slide loading
         # Transitions should be updated explicitly when needed, such as during export or transition type change.
+
+
+
+
+
+
+
+
 
     # -------------------------------
     # Internal: run ffmpeg and stream progress into the assembly half
@@ -214,27 +309,13 @@ class Slideshow:
             # --- Render transitions ---
             self._log("")  # Newline before transition rendering
             transition_clips = []
-            slide_consumption = {}  # Track which slides are consumed by each transition
-            i = 0  # Slide index
-            j = 0  # Transition counter
-            while i < total_items - 1:
-                self._log(f"[Slideshow] Rendering transitions ({j+1}/{total_transitions})...{'\r' if j < total_transitions else '\n'}")
-                trans_out = self.working_dir / f"trans_{j:03}.mp4"
-                
-                # All transitions use the unified render method
-                slides_consumed = self.transition.render(i, self.slides, trans_out)
-                
-                # Only create transition if slides were consumed (0 = skip this transition)
-                if slides_consumed > 0:
-                    transition_clips.append((i, trans_out))
-                    slide_consumption[i] = slides_consumed  # Track consumption for concat logic
-                    if self.progress_callback:
-                        self.progress_callback(total_items + j + 1, total_weighted_steps)
-                    j += 1
-                    i += slides_consumed
-                else:
-                    # Skip this transition
-                    i += 1
+            for i in range(total_items - 1):
+                self._log(f"[Slideshow] Rendering transitions ({i+1}/{total_transitions})...{'\r' if i < total_transitions else '\n'}")
+                trans_out = self.working_dir / f"trans_{i:03}.mp4"
+                self.transition.render(i, self.slides, trans_out)
+                transition_clips.append(trans_out)  # Just store the path
+                if self.progress_callback:
+                    self.progress_callback(total_items + i + 1, total_weighted_steps)
 
             # --- Write concat file ---
             with self.concat_file.open("w") as f:
@@ -242,26 +323,11 @@ class Slideshow:
                 if self._intro_clip:
                     f.write(f"file '{self._intro_clip.resolve()}'\n")
 
-                # Build set of consumed slides to skip in concat
-                consumed_slides = set()
-                for start_idx, _ in transition_clips:
-                    slides_consumed = slide_consumption.get(start_idx, 1)
-                    # Mark slides consumed by this transition (except the starting slide)
-                    for consumed_idx in range(start_idx + 1, start_idx + slides_consumed):
-                        if consumed_idx < len(self.slides):
-                            consumed_slides.add(consumed_idx)
-
-                # Write slides and transitions, skipping consumed slides
-                for slide_idx, slide in enumerate(self.slides):
-                    # Write the slide (unless it was consumed by a previous transition)
-                    if slide_idx not in consumed_slides:
-                        f.write(f"file '{slide.get_rendered_clip().resolve()}'\n")
-                    
-                    # Check if there's a transition starting at this slide
-                    for start_idx, tclip in transition_clips:
-                        if start_idx == slide_idx:
-                            f.write(f"file '{tclip.resolve()}'\n")
-                            break
+                for i, slide in enumerate(self.slides):
+                    f.write(f"file '{slide.get_rendered_clip().resolve()}'\n")
+                    # Insert transition after every slide except last
+                    if i < len(transition_clips):
+                        f.write(f"file '{transition_clips[i].resolve()}'\n")
 
             # --- Assemble & mux ---
             expected_duration = self.get_estimated_duration()
@@ -270,7 +336,7 @@ class Slideshow:
             # --- Pass 1: Assemble video-only ---
             self._log(f"[Slideshow] Assembling video-only...")
             cmd_pass1 = [
-                "ffmpeg", "-y",
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
                 "-c:v", "libx264", "-preset", "fast",
                 "-movflags", "+faststart", "-progress", "pipe:1",
@@ -293,7 +359,7 @@ class Slideshow:
             self._log("[Slideshow] Muxing soundtrack..." if has_soundtrack else "[Slideshow] Finalizing video (no soundtrack)...")
             cmd_pass2 = (
                 [
-                    "ffmpeg", "-y",
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                     "-i", str(self.video_only),
                     "-stream_loop", "-1", "-i", str(soundtrack_path),
                     "-map", "0:v", "-map", "1:a",
@@ -304,7 +370,7 @@ class Slideshow:
                 ]
                 if has_soundtrack
                 else [
-                    "ffmpeg", "-y",
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                     "-i", str(self.video_only),
                     "-c", "copy", "-movflags", "+faststart",
                     "-progress", "pipe:1", str(self.mux_no_fade),
@@ -321,7 +387,7 @@ class Slideshow:
                 self._log(f"[Slideshow] Applying 1s audio fade at {actual_duration-1:.2f}s")
                 fade_filter = f"afade=out:st={actual_duration - 1:.2f}:d=1"
                 cmd_pass3 = [
-                    "ffmpeg", "-y", "-i", str(self.mux_no_fade),
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(self.mux_no_fade),
                     "-c:v", "copy", "-af", fade_filter,
                     "-movflags", "+faststart", "-progress", "pipe:1",
                     str(output_path),
@@ -337,9 +403,62 @@ class Slideshow:
                     self.progress_callback(total_weighted_steps, total_weighted_steps)
 
             self._log(f"[Slideshow] Slideshow complete: {output_path}")
+            
+            # Display cache statistics
+            cache_stats = FFmpegCache.get_cache_stats()
+            if cache_stats.get("enabled", False):
+                hit_rate = cache_stats.get("hit_rate_percent", 0)
+                total_requests = cache_stats.get("total_requests", 0)
+                
+                if total_requests > 0:
+                    self._log(f"[FFmpegCache] Cache stats: {cache_stats['total_entries']} entries "
+                             f"({cache_stats['clip_count']} clips, {cache_stats['frame_count']} frames), "
+                             f"{cache_stats['total_size_mb']:.1f} MB")
+                    self._log(f"[FFmpegCache] Performance: {cache_stats['cache_hits']} hits, "
+                             f"{cache_stats['cache_misses']} misses, {hit_rate}% hit rate")
+                else:
+                    self._log(f"[FFmpegCache] Cache stats: {cache_stats['total_entries']} entries "
+                             f"({cache_stats['clip_count']} clips, {cache_stats['frame_count']} frames), "
+                             f"{cache_stats['total_size_mb']:.1f} MB (no usage data yet)")
 
         finally:
             if self.working_dir.exists():
                 self._log(f"[Slideshow] Cleaning working dir: {self.working_dir}")
-                shutil.rmtree(self.working_dir, ignore_errors=True)
+                # Clean everything except ffmpeg_cache directory
+                try:
+                    for item in self.working_dir.iterdir():
+                        if item.name != "ffmpeg_cache":
+                            if item.is_dir():
+                                shutil.rmtree(item, ignore_errors=True)
+                            else:
+                                item.unlink(missing_ok=True)
+                except Exception as e:
+                    self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
+    
+    # -------------------------------
+    # Cache Management
+    # -------------------------------
+    def get_cache_stats(self) -> dict:
+        """Get FFmpeg cache statistics."""
+        return FFmpegCache.get_cache_stats()
+    
+    def clear_cache(self):
+        """Clear the FFmpeg cache."""
+        FFmpegCache.clear_cache()
+        self._log("[FFmpegCache] Cache cleared")
+    
+    def cleanup_old_cache_entries(self, max_age_days: int = 30):
+        """Remove cache entries older than specified days."""
+        FFmpegCache.cleanup_old_entries(max_age_days)
+    
+    def enable_cache(self, enabled: bool = True):
+        """Enable or disable FFmpeg caching."""
+        FFmpegCache.enable(enabled)
+        status = "enabled" if enabled else "disabled"
+        self._log(f"[FFmpegCache] Caching {status}")
+    
+    def reset_cache_stats(self):
+        """Reset cache hit/miss statistics."""
+        FFmpegCache.reset_stats()
+        self._log("[FFmpegCache] Cache statistics reset")
 

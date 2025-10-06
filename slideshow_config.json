@@ -14,6 +14,7 @@
   "origami_easing": "quad",
   "origami_lighting": true,
   "origami_fold": "",
+  "multislide_frequency": 5,
   "intro_title": {
     "enabled": true,
     "text": "Europe\\nAugust 2025",
@@ -47,5 +48,7 @@
   "temp_directory": "",
   "auto_cleanup": true,
   "keep_intermediate_frames": false,
+  "ffmpeg_cache_enabled": true,
+  "ffmpeg_cache_dir": "",
   "soundtrack": "/Users/markpinnuck/Dev/GitHub/SlideShowBuilder/data/soundtracks/G._Love_Special_Sauce_-_City_Livin_Album_Version_Album_Version_(mp3.pm).mp3"
 }

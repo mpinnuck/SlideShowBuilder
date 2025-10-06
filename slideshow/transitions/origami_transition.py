@@ -16,7 +16,6 @@ from slideshow.transitions.origami_fold_up_down import OrigamiFoldUp, OrigamiFol
 from slideshow.transitions.origami_fold_center import OrigamiFoldCenterHoriz, OrigamiFoldCenterVert
 from slideshow.transitions.origami_fold_slide import OrigamiFoldSlideLeft, OrigamiFoldSlideRight
 from slideshow.transitions.origami_fold_multi_lr import OrigamiFoldMultiLRLeft, OrigamiFoldMultiLRRight
-from slideshow.transitions.origami_fold_multi_slide import OrigamiFoldMultiSlide
 
 
 
@@ -56,7 +55,6 @@ class OrigamiTransition(BaseTransition):
             "slide_right": OrigamiFoldSlideRight,
             "multileft": OrigamiFoldMultiLRLeft,
             "multiright": OrigamiFoldMultiLRRight,
-            "multislide": OrigamiFoldMultiSlide,
         }
 
     def get_requirements(self):

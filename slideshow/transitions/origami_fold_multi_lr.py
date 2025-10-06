@@ -62,7 +62,7 @@ class OrigamiFoldMultiLRLeft(OrigamiFoldMultiLR):
         # Add pause frames between folds for visual separation
         pause_frames = max(1, total_frames // 30)  # Small pause between folds
         
-        print(f"Multi-fold timing: {per_fold_frames} frames per fold, {pause_frames} pause frames")
+#       print(f"Multi-fold timing: {per_fold_frames} frames per fold, {pause_frames} pause frames")
         
         previous_frame = frame0  # Start with the FROM image
 
@@ -157,7 +157,7 @@ class OrigamiFoldMultiLRRight(OrigamiFoldMultiLR):
         # Add pause frames between folds for visual separation
         pause_frames = max(1, total_frames // 30)  # Small pause between folds
         
-        print(f"Multi-fold timing: {per_fold_frames} frames per fold, {pause_frames} pause frames")
+#        print(f"Multi-fold timing: {per_fold_frames} frames per fold, {pause_frames} pause frames")
         
         previous_frame = frame0  # Start with the FROM image
 

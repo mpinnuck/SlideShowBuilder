@@ -4,6 +4,7 @@ import subprocess, tempfile, os
 from pathlib import Path
 from PIL import Image
 import numpy as np
+from slideshow.transitions.ffmpeg_cache import FFmpegCache
 
 def get_video_info(video_path):
     """Return (width, height, fps) of a video using ffprobe."""
@@ -39,6 +40,19 @@ def get_video_duration(video_path):
 
 def extract_frame(video_path, last=False):
     """Extract the first or last frame of a video to a PIL.Image (robust)."""
+    
+    # Create cache key parameters
+    cache_params = {
+        "operation": "extract_frame",
+        "frame_type": "last" if last else "first",
+        "format": "png"
+    }
+    
+    # Check cache first
+    cached_frame = FFmpegCache.get_cached_frame(Path(video_path), cache_params)
+    if cached_frame:
+        return Image.open(cached_frame).convert("RGB")
+    
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
         tmp_path = tmpfile.name
     try:
@@ -54,8 +68,11 @@ def extract_frame(video_path, last=False):
             # Fallback to seeking 1s before end
             cmd = ["ffmpeg", "-y", "-sseof", "-1", "-i", str(video_path),
                    "-vframes", "1", tmp_path]
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, capture_output=True)  # Suppress verbose output
 
+        # Store extracted frame in cache before returning
+        FFmpegCache.store_frame(Path(video_path), cache_params, Path(tmp_path))
+        
         return Image.open(tmp_path).convert("RGB")
     finally:
         if os.path.exists(tmp_path):
@@ -103,4 +120,4 @@ def save_frames_as_video(frames, output_path, fps=25):
             "-i", f"{tmp}/frame_%06d.png",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", str(output_path)
         ]
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, capture_output=True)  # Suppress verbose output

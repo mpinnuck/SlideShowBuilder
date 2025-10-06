@@ -15,6 +15,7 @@ import numpy as np
 import math
 import os
 import slideshow.config  
+from slideshow.transitions.ffmpeg_cache import FFmpegCache
 
 
 class IntroTitle:
@@ -47,6 +48,38 @@ class IntroTitle:
         """
         if not self.enabled:
             return None
+
+        # Create cache key based on intro title settings and background
+        import hashlib
+        bg_hash = hashlib.md5(background_image.tobytes()).hexdigest()[:8]
+        
+        virtual_path = Path(f"intro_title_{bg_hash}")
+        
+        cache_params = {
+            "operation": "intro_title_render", 
+            "text": self.text,
+            "duration": self.duration,
+            "font_path": self.font_path,
+            "font_size": self.font_size,
+            "font_weight": self.font_weight,
+            "line_spacing": self.line_spacing,
+            "text_color": self.text_color,
+            "shadow_color": self.shadow_color,
+            "shadow_offset": self.shadow_offset,
+            "rotation_axis": self.rotation_axis,
+            "clockwise": self.clockwise,
+            "fps": self.fps,
+            "resolution": self.resolution,
+            "background_hash": bg_hash
+        }
+        
+        # Check cache first
+        cached_intro = FFmpegCache.get_cached_clip(virtual_path, cache_params)
+        if cached_intro:
+            # Copy cached intro to output path
+            import shutil
+            shutil.copy2(cached_intro, output_path)
+            return output_path
 
         # Ensure background matches target resolution
         bg = background_image.convert("RGBA").resize(self.resolution)
@@ -109,6 +142,9 @@ class IntroTitle:
             ffmpeg_process.terminate()
             ffmpeg_process.wait()
             raise e
+
+        # Store result in cache for future use
+        FFmpegCache.store_clip(virtual_path, cache_params, output_path)
 
         return output_path
 

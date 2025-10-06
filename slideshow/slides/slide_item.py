@@ -13,6 +13,7 @@ class SlideItem(ABC):
         self._to_image: Optional[Image.Image] = None
         self._from_image: Optional[Image.Image] = None
         self._rendered_clip: Optional[Path] = None
+        self._is_portrait: Optional[bool] = None  # Cache for orientation check
 
     def render(self, working_dir: Path, log_callback=None, progress_callback=None) -> Path:
         """
@@ -51,6 +52,27 @@ class SlideItem(ABC):
     def get_rendered_clip(self) -> Optional[Path]:
         """Return the path to the rendered clip (if render() has been called)."""
         return self._rendered_clip
+
+    def is_portrait(self) -> bool:
+        """
+        Check if this slide's content is in portrait orientation.
+        Abstract method - must be implemented by child classes.
+        Result is cached after first call.
+        """
+        if self._is_portrait is None:
+            self._is_portrait = self._check_orientation()
+        return self._is_portrait
+    
+    @abstractmethod
+    def _check_orientation(self) -> bool:
+        """
+        Check the orientation of the source media file.
+        Must be implemented by child classes (PhotoSlide, VideoSlide, etc.)
+        
+        Returns:
+            True if portrait (height > width), False if landscape
+        """
+        pass
 
     def exists(self) -> bool:
         """Check if the underlying media file still exists on disk."""

@@ -33,6 +33,21 @@ class BaseTransition(ABC):
         """Return list of required dependencies for this transition."""
         return []
 
+    def get_slides_consumed(self, slide_index: int, slides: list) -> int:
+        """
+        Return the number of slides this transition will consume.
+        
+        Args:
+            slide_index: Current slide index in the slideshow
+            slides: Array of all slides in the slideshow
+            
+        Returns:
+            Number of slides that will be consumed:
+            - 1: Standard transition (default)
+            - 2+: Multi-slide transition (override in subclasses)
+        """
+        return 1
+
     def is_available(self) -> bool:
         """Check if this transition can be used (all dependencies available)."""
         try:

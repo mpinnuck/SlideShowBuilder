@@ -2,6 +2,7 @@ from pathlib import Path
 import subprocess
 from slideshow.config import DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
+from slideshow.transitions.ffmpeg_cache import FFmpegCache
 
 
 class VideoSlide(SlideItem):
@@ -11,11 +12,43 @@ class VideoSlide(SlideItem):
         self.fps = fps if fps is not None else DEFAULT_CONFIG["fps"]
 
     def render(self, working_dir: Path, log_callback=None, progress_callback=None):
-        clip_path = super().render(working_dir, log_callback, progress_callback)
+        working_dir.mkdir(parents=True, exist_ok=True)
 
         if log_callback:
             log_callback(f"[Slideshow] Rendering video slide: {self.path.name} "
-                         f"(target={self.duration:.2f}s, output={clip_path})")
+                         f"(target={self.duration:.2f}s)")
+
+        # Create cache key parameters for this specific rendering
+        cache_params = {
+            "operation": "video_slide_render",
+            "duration": self.duration,
+            "fps": self.fps,
+            "resolution": self.resolution,
+            "format": "mp4"
+        }
+        
+        # Check cache first
+        cached_clip = FFmpegCache.get_cached_clip(self.path, cache_params)
+        if cached_clip:
+            if log_callback:
+                log_callback(f"[FFmpegCache] Using cached video clip: {cached_clip.name}")
+            
+            # Create a unique output filename in working directory
+            import hashlib
+            param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
+            clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
+            self._rendered_clip = clip_path
+            
+            # Copy cached clip to working directory
+            import shutil
+            shutil.copy2(cached_clip, clip_path)
+            return clip_path
+
+        # Create a unique output filename based on parameters
+        import hashlib
+        param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
+        clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
+        self._rendered_clip = clip_path
 
         ffmpeg_cmd = [
             "ffmpeg", "-y",
@@ -42,10 +75,38 @@ class VideoSlide(SlideItem):
         if process.returncode != 0:
             raise RuntimeError(f"FFmpeg failed for {self.path}:\n{process.stderr}")
 
+        # Store result in cache for future use
+        FFmpegCache.store_clip(self.path, cache_params, clip_path)
+
         if log_callback:
             log_callback(f"Video slide rendered successfully: {clip_path}")
 
         return clip_path
+    
+    def _check_orientation(self) -> bool:
+        """Check if the video is in portrait orientation by examining video metadata."""
+        try:
+            # Use ffprobe to get video dimensions
+            cmd = [
+                "ffprobe", "-v", "quiet",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "csv=s=x:p=0",
+                str(self.path)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                dimensions = result.stdout.strip()
+                if 'x' in dimensions:
+                    width, height = map(int, dimensions.split('x'))
+                    return height > width
+            
+        except Exception:
+            pass
+        
+        # Fallback: assume landscape if we can't determine orientation
+        return False
 
     def __repr__(self):
         return (f"{self.__class__.__name__}(path={self.path}, duration={self.duration}, "
