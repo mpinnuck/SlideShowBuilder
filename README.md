@@ -31,6 +31,16 @@ A professional Python-based macOS application for creating stunning video slides
   - Title/intro customization  
   - Advanced video and performance settings
   - Cache management tools
+- **Project History Dropdown**: Quick access to recent projects
+  - Maintains list of last 10 projects (Most Recently Used)
+  - Click dropdown to switch between projects instantly
+  - Automatically loads all project settings
+  - Projects auto-saved when switching
+- **Image Preview & Rotation**: Built-in tool to:
+  - Preview all images in the input folder
+  - Rotate individual images (90° left/right, 180°) and save to disk
+  - Navigate with arrow keys or jump to specific images
+  - Rotations permanently applied to source files
 - **Real-time Progress Tracking**: 
   - Accurate progress indication during video processing
   - File loading progress (updates every 10 files)
@@ -169,7 +179,24 @@ python slideshowbuilder.py
    - Set "Multi-Slide Frequency" (e.g., 10 = every 10th slide becomes 3-photo composite)
    - Automatically creates attractive multi-image layouts
 
-4. **Export:**
+4. **Image Rotation** (if needed):
+   - Click "Preview & Rotate Images" button
+   - Navigate through all images with Previous/Next buttons or arrow keys
+   - Rotate images that are sideways or upside down:
+     - 90° Left: Rotate counter-clockwise
+     - 90° Right: Rotate clockwise
+     - 180°: Flip upside down
+     - Reset: Rotate back to original orientation
+   - Jump to specific image number using the "Jump to" field
+   - Rotations are **immediately saved to disk** - the source image file is permanently rotated
+   - Click "Save & Close" when finished
+   - Note: Rotation history is tracked in config for reference purposes
+   - Keyboard shortcuts:
+     - Left/Right arrows: Navigate images
+     - Cmd+Left: Rotate 90° left
+     - Cmd+Right: Rotate 90° right
+
+5. **Export:**
    - Click "Export Video"
    - Progress bar shows real-time rendering status
    - Log panel displays detailed processing information
@@ -184,6 +211,7 @@ SlideShow Builder uses a sophisticated two-level configuration system for flexib
 1. **Global App Settings** (`~/SlideshowBuilder/slideshow_settings.json`):
    - Stores application-level preferences
    - Remembers the last opened project path
+   - Maintains project history (last 10 projects)
    - Persists across all projects and sessions
    - Automatically created on first launch
 
@@ -306,6 +334,7 @@ The two-level configuration architecture separates app-wide settings from projec
 
 **Global Settings** (`~/SlideshowBuilder/slideshow_settings.json`):
 - `last_project_path`: Path to most recently used project
+- `project_history`: List of last 10 projects with paths and names
 - Application-wide preferences
 - Persists across all projects
 
@@ -318,6 +347,8 @@ The two-level configuration architecture separates app-wide settings from projec
 **Key Functions** (`slideshow/config.py`):
 - `load_app_settings()`: Load global preferences
 - `save_app_settings(settings)`: Save global preferences
+- `add_to_project_history(path, name)`: Add/update project in history
+- `get_project_history()`: Get list of recent projects
 - `load_config(output_folder)`: Load project settings from folder
 - `save_config(config, output_folder)`: Save project settings
 - `get_project_config_path(output_folder)`: Get path to project config
@@ -440,6 +471,17 @@ See `requirements.txt` for complete Python dependencies:
 Major enhancements and architectural improvements:
 
 **New Features:**
+- **Project History Dropdown**: Quick switching between recent projects
+  - Dropdown shows last 10 projects (Most Recently Used order)
+  - Click any project name to instantly load all its settings
+  - Projects automatically saved when switching
+  - Smart MRU behavior: recent projects move to top
+  - Invalid/deleted projects automatically filtered out
+- **Image Preview & Rotation Tool**: Navigate and rotate images before export
+  - Preview all images with thumbnail navigation
+  - Rotate individual images (90°, 180°, 270°) and save to disk
+  - Keyboard shortcuts for quick navigation and rotation
+  - Rotations permanently applied to source files (no render-time overhead)
 - **Two-Level Configuration System**: Global app settings + per-project configs
 - **Project-Based Folder Structure**: Each project gets its own folder with cache
 - **Smart Project Detection**: Automatically loads existing projects or creates new ones

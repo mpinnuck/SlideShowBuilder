@@ -186,6 +186,7 @@ class Slideshow:
             if ext in (".jpg", ".jpeg", ".png"):
                 resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
                 fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
+                
                 self.slides.append(PhotoSlide(path, self.config["photo_duration"], fps=fps, resolution=resolution))
                 photo_count += 1
             elif ext in (".mp4", ".mov"):

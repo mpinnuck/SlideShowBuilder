@@ -6,7 +6,7 @@ A slide that composites multiple input images into a single slide with 70/30 lay
 """
 
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageOps
 import tempfile
 import subprocess
 from slideshow.slides.slide_item import SlideItem
@@ -48,6 +48,8 @@ class MultiSlide(SlideItem):
                 main_file = self.media_files[self.index]
                 if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png']:
                     with Image.open(main_file) as img:
+                        # Apply EXIF orientation to get correct dimensions
+                        img = ImageOps.exif_transpose(img)
                         return img.height > img.width
                 elif main_file.suffix.lower() in ['.mp4', '.mov']:
                     # Use ffprobe for video files
@@ -80,9 +82,12 @@ class MultiSlide(SlideItem):
                 # Only load image files
                 if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
                     img = Image.open(file_path)
+                    # Apply EXIF orientation to display correctly
+                    img = ImageOps.exif_transpose(img)
                     # Convert to RGB if needed
                     if img.mode != 'RGB':
                         img = img.convert('RGB')
+                    
                     images.append(img)
         
         if len(images) < 3:
@@ -368,6 +373,8 @@ class MultiSlide(SlideItem):
             if path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
                 # Static image
                 img = Image.open(path)
+                # Apply EXIF orientation to display correctly
+                img = ImageOps.exif_transpose(img)
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
                 media_sources.append({'type': 'image', 'data': img})

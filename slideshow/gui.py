@@ -4,7 +4,8 @@ import threading
 import sys
 import re
 from pathlib import Path
-from slideshow.config import load_config, save_config, save_app_settings, load_app_settings, get_project_config_path
+from PIL import Image, ImageTk, ImageOps
+from slideshow.config import load_config, save_config, save_app_settings, load_app_settings, get_project_config_path, add_to_project_history, get_project_history, add_to_project_history, get_project_history
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 
 def wide_messagebox(msg_type, title, message):
@@ -140,13 +141,23 @@ class GUI(tk.Tk):
             self.minsize(920, 500)  # Update minimum width to match initial
 
     def create_widgets(self):
-        # Project Info
+        # Project Info with history dropdown
         ttk.Label(self, text="Project Name:").grid(row=0, column=0, sticky="e")
         self.name_var = tk.StringVar(value=self.config_data.get("project_name", "Untitled"))
-        name_entry = ttk.Entry(self, textvariable=self.name_var, width=40)
-        name_entry.grid(row=0, column=1, columnspan=2, sticky="we")
-        name_entry.bind('<FocusOut>', lambda e: self._on_project_name_change())
-        name_entry.bind('<Return>', lambda e: self._on_project_name_change())
+        
+        # Get project history for dropdown
+        self.project_history = get_project_history()
+        
+        # Use combobox for project name with history
+        self.name_combo = ttk.Combobox(self, textvariable=self.name_var, width=38, values=self.project_history)
+        self.name_combo.grid(row=0, column=1, columnspan=2, sticky="we")
+        self.name_combo.bind('<FocusIn>', lambda e: self._on_project_name_focus_in())
+        self.name_combo.bind('<FocusOut>', lambda e: self._on_project_name_focus_out())
+        self.name_combo.bind('<Return>', lambda e: self._on_project_name_focus_out())
+        self.name_combo.bind('<<ComboboxSelected>>', lambda e: self._on_project_selected())
+        
+        # Store the project name when focus is gained
+        self._project_name_on_focus = ""
 
         # Input Folder
         ttk.Label(self, text="Input Folder:").grid(row=1, column=0, sticky="e")
@@ -212,6 +223,7 @@ class GUI(tk.Tk):
         self.export_button.pack(side=tk.LEFT, padx=(0, 3))
         self.play_button = ttk.Button(self.button_frame, text="Play Slideshow", command=self.play_slideshow)
         self.play_button.pack(side=tk.LEFT, padx=(0, 6))  # Double spacing before Settings
+        ttk.Button(self.button_frame, text="Preview & Rotate Images", command=self.open_image_rotator).pack(side=tk.LEFT, padx=(0, 3))
         ttk.Button(self.button_frame, text="Settings", command=self.open_settings).pack(side=tk.LEFT, padx=(0, 3))
         ttk.Button(self.button_frame, text="Save Config", command=self.save_config).pack(side=tk.LEFT)
 
@@ -425,6 +437,86 @@ class GUI(tk.Tk):
             except Exception as e:
                 self.log_message(f"No existing project settings in folder (will create on save)")
 
+    def _on_project_name_focus_in(self):
+        """Handle focus-in: Push current project in edit control to top of history"""
+        current_name = self.name_var.get().strip()
+        
+        # Store what's currently at top of queue for comparison on focus-out
+        self._project_name_on_focus = current_name
+        
+        # Push current project name to top of history
+        if current_name:
+            add_to_project_history(current_name)
+            self._refresh_project_history()
+    
+    def _on_project_name_focus_out(self):
+        """Handle focus-out: Compare with stored name, only push to history if different"""
+        new_name = self.name_var.get().strip()
+        
+        # Compare with what was at top when focus gained
+        if new_name != self._project_name_on_focus:
+            # Name changed - handle rename logic
+            self._on_project_name_change()
+            
+            # Push changed name to top of history
+            if new_name:
+                add_to_project_history(new_name)
+                self._refresh_project_history()
+        # If same as stored name, do nothing (already at top from focus-in)
+    
+    def _on_project_selected(self):
+        """Handle selection from project history dropdown"""
+        selected_name = self.name_var.get().strip()
+        if not selected_name:
+            return
+        
+        # Just update the project name - the user will need to set/select the output folder
+        self.log_message(f"Selected project from history: {selected_name}")
+        # The name is already set in name_var by the combobox selection
+        # Trigger the name change handler
+        self._on_project_name_change()
+    
+    def _load_project_from_path(self, project_path: str, project_name: str):
+        """Load a project from its path"""
+        try:
+            # Extract output folder (parent of project folder)
+            project_path_obj = Path(project_path)
+            output_folder = str(project_path_obj.parent)
+            
+            # Load config from project
+            config = load_config(output_folder)
+            
+            # Update UI with loaded config
+            self._updating_ui = True
+            self.config_data = config
+            
+            # Update all UI fields
+            self.name_var.set(config.get("project_name", project_name))
+            self.input_var.set(config.get("input_folder", ""))
+            self.output_var.set(output_folder)
+            self.soundtrack_var.set(config.get("soundtrack", ""))
+            self.photo_dur_var.set(config.get("photo_duration", 3))
+            self.video_dur_var.set(config.get("video_duration", 10))
+            self.multislide_freq_var.set(config.get("multislide_frequency", 10))
+            self.trans_dur_var.set(config.get("transition_duration", 1))
+            
+            # Update transition dropdown
+            self.transition_var.set(config.get("transition_type", "fade"))
+            
+            self._updating_ui = False
+            
+            self.log_message(f"Loaded project: {project_name}")
+            self._check_play_button_state()
+            
+        except Exception as e:
+            self._updating_ui = False
+            self.log_message(f"Error loading project: {e}")
+    
+    def _refresh_project_history(self):
+        """Refresh the project history dropdown"""
+        self.project_history = get_project_history()  # Returns list of strings
+        self.name_combo['values'] = self.project_history
+    
     def _on_project_name_change(self):
         """Handle project name changes on focus loss - update output folder path and load/save config."""
         new_project_name = self.name_var.get()
@@ -461,6 +553,47 @@ class GUI(tk.Tk):
         else:
             # No output path yet
             self._auto_save_config()
+    
+    def _load_project_from_path(self, project_path: str, project_name: str):
+        """Load a project from its path"""
+        try:
+            # Extract output folder (parent of project folder)
+            project_path_obj = Path(project_path)
+            output_folder = str(project_path_obj.parent)
+            
+            # Load config from project
+            config = load_config(output_folder)
+            
+            # Update UI with loaded config
+            self._updating_ui = True
+            self.config_data = config
+            
+            # Update all UI fields
+            self.name_var.set(config.get("project_name", project_name))
+            self.input_var.set(config.get("input_folder", ""))
+            self.output_var.set(output_folder)
+            self.soundtrack_var.set(config.get("soundtrack", ""))
+            self.photo_dur_var.set(config.get("photo_duration", 3))
+            self.video_dur_var.set(config.get("video_duration", 10))
+            self.multislide_freq_var.set(config.get("multislide_frequency", 10))
+            self.trans_dur_var.set(config.get("transition_duration", 1))
+            
+            # Update transition dropdown
+            self.transition_var.set(config.get("transition_type", "fade"))
+            
+            self._updating_ui = False
+            
+            self.log_message(f"Loaded project: {project_name}")
+            self._check_play_button_state()
+            
+        except Exception as e:
+            self._updating_ui = False
+            self.log_message(f"Error loading project: {e}")
+    
+    def _refresh_project_history(self):
+        """Refresh the project history dropdown"""
+        self.project_history = get_project_history()  # Returns list of strings
+        self.name_combo['values'] = self.project_history
     
     def select_soundtrack(self):
         import os
@@ -766,6 +899,256 @@ class GUI(tk.Tk):
         """Re-enable the export button after processing"""
         self.export_button.configure(state='normal')
         # Play button state will be set by _check_play_button_state() call
+    
+    def open_image_rotator(self):
+        """Open the image preview and rotation dialog"""
+        input_folder = self.input_var.get().strip()
+        if not input_folder:
+            wide_messagebox("error", "Error", "Please select an input folder first.")
+            return
+        
+        if not Path(input_folder).exists():
+            wide_messagebox("error", "Error", "Input folder does not exist.")
+            return
+        
+        ImageRotatorDialog(self)
+
+
+class ImageRotatorDialog:
+    """Dialog for previewing and rotating images"""
+    
+    def __init__(self, parent):
+        self.parent = parent
+        self.config_data = parent.config_data
+        self.input_folder = Path(parent.input_var.get().strip())
+        
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Preview & Rotate Images")
+        self.dialog.geometry("1200x800")
+        self.dialog.transient(parent)
+        
+        # Find all image files
+        self.image_files = []
+        for ext in ['.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG']:
+            self.image_files.extend(self.input_folder.glob(f'*{ext}'))
+        
+        # Sort all files together by name (case-insensitive for better sorting)
+        self.image_files = sorted(self.image_files, key=lambda p: p.name.lower())
+        
+        if not self.image_files:
+            wide_messagebox("error", "Error", "No image files found in the input folder.")
+            self.dialog.destroy()
+            return
+        
+        self.current_index = 0
+        self.thumbnail_cache = {}  # Cache thumbnails for performance
+        
+        self._create_widgets()
+        self._center_dialog()
+        self._load_image()
+    
+    def _center_dialog(self):
+        """Center the dialog on the screen"""
+        self.dialog.update_idletasks()
+        
+        dialog_w = self.dialog.winfo_width()
+        dialog_h = self.dialog.winfo_height()
+        
+        screen_w = self.dialog.winfo_screenwidth()
+        screen_h = self.dialog.winfo_screenheight()
+        
+        x = (screen_w // 2) - (dialog_w // 2)
+        y = (screen_h // 2) - (dialog_h // 2)
+        
+        self.dialog.geometry(f"{dialog_w}x{dialog_h}+{x}+{y}")
+    
+    def _create_widgets(self):
+        """Create the dialog widgets"""
+        # Top frame with navigation
+        top_frame = ttk.Frame(self.dialog)
+        top_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Button(top_frame, text="◀ Previous", command=self._prev_image).pack(side=tk.LEFT, padx=5)
+        ttk.Button(top_frame, text="Next ▶", command=self._next_image).pack(side=tk.LEFT, padx=5)
+        
+        self.counter_label = ttk.Label(top_frame, text="")
+        self.counter_label.pack(side=tk.LEFT, padx=20)
+        
+        ttk.Label(top_frame, text="Jump to:").pack(side=tk.LEFT, padx=(20, 5))
+        self.jump_var = tk.StringVar()
+        jump_entry = ttk.Entry(top_frame, textvariable=self.jump_var, width=8)
+        jump_entry.pack(side=tk.LEFT)
+        jump_entry.bind('<Return>', lambda e: self._jump_to_image())
+        
+        ttk.Button(top_frame, text="Go", command=self._jump_to_image).pack(side=tk.LEFT, padx=5)
+        
+        # Filename label
+        self.filename_label = ttk.Label(self.dialog, text="", font=("TkDefaultFont", 10, "bold"))
+        self.filename_label.pack(pady=(0, 10))
+        
+        # Main frame with preview
+        main_frame = ttk.Frame(self.dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Image canvas
+        canvas_frame = ttk.Frame(main_frame, relief=tk.SUNKEN, borderwidth=2)
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        
+        self.canvas = tk.Canvas(canvas_frame, bg='gray20')
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Rotation controls
+        rotation_frame = ttk.Frame(self.dialog)
+        rotation_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(rotation_frame, text="Rotate:").pack(side=tk.LEFT, padx=5)
+        ttk.Button(rotation_frame, text="↶ 90° Left", command=lambda: self._rotate(-90)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(rotation_frame, text="↷ 90° Right", command=lambda: self._rotate(90)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(rotation_frame, text="↻ 180°", command=lambda: self._rotate(180)).pack(side=tk.LEFT, padx=5)
+        
+        self.rotation_label = ttk.Label(rotation_frame, text="", font=("TkDefaultFont", 10))
+        self.rotation_label.pack(side=tk.LEFT, padx=20)
+        
+        # Bottom frame with buttons
+        bottom_frame = ttk.Frame(self.dialog)
+        bottom_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Button(bottom_frame, text="Close", command=self._close).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(bottom_frame, text="Save", command=self._save).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(bottom_frame, text="Cancel", command=self.dialog.destroy).pack(side=tk.RIGHT, padx=5)
+        
+        # Keyboard shortcuts
+        self.dialog.bind('<Left>', lambda e: self._prev_image())
+        self.dialog.bind('<Right>', lambda e: self._next_image())
+        self.dialog.bind('<Command-Left>', lambda e: self._rotate(-90))
+        self.dialog.bind('<Command-Right>', lambda e: self._rotate(90))
+    
+    def _load_image(self):
+        """Load and display the current image"""
+        if not self.image_files:
+            return
+        
+        image_path = self.image_files[self.current_index]
+        filename = image_path.name
+        
+        # Update counter and filename
+        self.counter_label.config(text=f"Image {self.current_index + 1} of {len(self.image_files)}")
+        self.filename_label.config(text=filename)
+        
+        # Clear rotation label
+        self.rotation_label.config(text="")
+        
+        # Load image
+        try:
+            img = Image.open(image_path)
+            
+            # Apply EXIF orientation to display portrait images correctly
+            img = ImageOps.exif_transpose(img)
+            
+            # Resize to fit canvas while maintaining aspect ratio
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+            
+            # Use a default size if canvas hasn't been drawn yet
+            if canvas_width <= 1:
+                canvas_width = 1000
+            if canvas_height <= 1:
+                canvas_height = 600
+            
+            # Calculate scaling
+            img_ratio = img.width / img.height
+            canvas_ratio = canvas_width / canvas_height
+            
+            if img_ratio > canvas_ratio:
+                # Image is wider - fit to width
+                new_width = canvas_width - 40
+                new_height = int(new_width / img_ratio)
+            else:
+                # Image is taller - fit to height
+                new_height = canvas_height - 40
+                new_width = int(new_height * img_ratio)
+            
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Convert to PhotoImage
+            self.photo = ImageTk.PhotoImage(img)
+            
+            # Display on canvas
+            self.canvas.delete("all")
+            x = canvas_width // 2
+            y = canvas_height // 2
+            self.canvas.create_image(x, y, image=self.photo)
+            
+        except Exception as e:
+            self.parent.log_message(f"Error loading image {filename}: {e}")
+    
+    def _rotate(self, degrees):
+        """Rotate and save the current image by the specified degrees"""
+        if not self.image_files:
+            return
+        
+        image_path = self.image_files[self.current_index]
+        filename = image_path.name
+        
+        try:
+            # Load the current image from disk
+            img = Image.open(image_path)
+            
+            # Apply EXIF orientation first to get the correct base orientation
+            img = ImageOps.exif_transpose(img)
+            
+            # Rotate the image (PIL rotates counter-clockwise, so negate)
+            img_rotated = img.rotate(-degrees, expand=True)
+            
+            # Save back to the same file
+            img_rotated.save(image_path)
+            
+            # Log the rotation
+            self.parent.log_message(f"Rotated and saved {filename} by {degrees}°")
+            
+            # Clear the thumbnail cache for this image
+            self.thumbnail_cache.pop(filename, None)
+            
+            # Reload to show the saved version
+            self._load_image()
+            
+        except Exception as e:
+            self.parent.log_message(f"Error rotating image {filename}: {e}")
+            wide_messagebox("error", "Error", f"Failed to rotate image: {e}")
+    
+    def _prev_image(self):
+        """Go to previous image"""
+        if self.current_index > 0:
+            self.current_index -= 1
+            self._load_image()
+    
+    def _next_image(self):
+        """Go to next image"""
+        if self.current_index < len(self.image_files) - 1:
+            self.current_index += 1
+            self._load_image()
+    
+    def _jump_to_image(self):
+        """Jump to a specific image number"""
+        try:
+            target = int(self.jump_var.get()) - 1  # Convert to 0-based index
+            if 0 <= target < len(self.image_files):
+                self.current_index = target
+                self._load_image()
+            else:
+                wide_messagebox("error", "Error", f"Please enter a number between 1 and {len(self.image_files)}")
+        except ValueError:
+            wide_messagebox("error", "Error", "Please enter a valid number")
+    
+    def _save(self):
+        """Images are already saved to disk - nothing to save"""
+        self.parent.log_message("Image rotation changes have been saved to disk")
+    
+    def _close(self):
+        """Close dialog"""
+        self._save()
+        self.dialog.destroy()
 
 
 class SettingsDialog:
@@ -1508,8 +1891,8 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
                     if show_frame_number:
                         # Extract frame number from parameters if available
                         frame_num = "N/A"
-                        if 'parameters' in entry and 'timestamp' in entry['parameters']:
-                            frame_num = f"{entry['parameters']['timestamp']:.2f}s"
+                        if 'params' in entry and 'timestamp' in entry['params']:
+                            frame_num = f"{entry['params']['timestamp']:.2f}s"
                         
                         tree.insert('', tk.END, values=(
                             entry['source_file'],
@@ -1521,8 +1904,8 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
                     else:
                         # Extract duration from parameters if available
                         duration = "N/A"
-                        if 'parameters' in entry and 'duration' in entry['parameters']:
-                            duration = f"{entry['parameters']['duration']:.1f}"
+                        if 'params' in entry and 'duration' in entry['params']:
+                            duration = f"{entry['params']['duration']:.1f}"
                         
                         tree.insert('', tk.END, values=(
                             entry['source_file'],

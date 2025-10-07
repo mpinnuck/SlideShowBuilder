@@ -364,6 +364,53 @@ class FFmpegCache:
         cls._save_metadata()
     
     @classmethod
+    def invalidate_file(cls, file_path: Union[str, Path]):
+        """
+        Invalidate all cache entries for a specific input file.
+        
+        This should be called when a file is modified (e.g., rotated),
+        to ensure stale cached data is removed.
+        
+        Args:
+            file_path: Path to the file whose cache entries should be invalidated
+        """
+        if not cls._cache_dir:
+            return
+        
+        file_path = Path(file_path)
+        filename = file_path.name
+        entries_to_remove = []
+        
+        # Find all cache entries that reference this file
+        for cache_key, entry in cls._metadata.get("entries", {}).items():
+            entry_input = entry.get("input_path", "")
+            if Path(entry_input).name == filename:
+                entries_to_remove.append(cache_key)
+                
+                # Remove the actual cached file
+                if entry.get("type") == "clip":
+                    cached_file = cls._cache_dir / "clips" / f"{cache_key}.mp4"
+                elif entry.get("type") == "frame":
+                    cached_file = cls._cache_dir / "frames" / f"{cache_key}.png"
+                else:
+                    continue
+                    
+                if cached_file.exists():
+                    try:
+                        cached_file.unlink()
+                    except OSError:
+                        pass  # Ignore errors during cleanup
+        
+        # Remove metadata entries
+        for cache_key in entries_to_remove:
+            if cache_key in cls._metadata.get("entries", {}):
+                del cls._metadata["entries"][cache_key]
+        
+        if entries_to_remove:
+            cls._save_metadata()
+            print(f"[FFmpegCache] Invalidated {len(entries_to_remove)} cache entries for {filename}")
+    
+    @classmethod
     def cleanup_old_entries(cls, max_age_days: int = 30):
         """Remove cache entries older than specified days."""
         if not cls._cache_dir:

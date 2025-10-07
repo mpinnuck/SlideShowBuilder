@@ -8,7 +8,8 @@ APP_SETTINGS_FILE = APP_SETTINGS_DIR / "slideshow_settings.json"
 
 # Default app-level settings
 DEFAULT_APP_SETTINGS = {
-    "last_project_path": ""
+    "last_project_path": "",
+    "project_history": []  # List of recent project names (strings), newest first (max 10)
 }
 
 # Default project-level settings
@@ -92,6 +93,52 @@ def save_app_settings(settings: dict):
             json.dump(merged, f, indent=2)
     except OSError as e:
         print(f"[Config] WARNING: Failed to save app settings ({e})")
+
+def add_to_project_history(project_name: str):
+    """
+    Add a project name to the history list, maintaining the last 10 projects.
+    
+    Args:
+        project_name: Name of the project
+    """
+    if not project_name:
+        return
+    
+    settings = load_app_settings()
+    history = settings.get("project_history", [])
+    
+    # Ensure history is a list (handle old format)
+    if not isinstance(history, list):
+        history = []
+    
+    # Remove if already exists (to move to top)
+    history = [name for name in history if isinstance(name, str) and name != project_name]
+    
+    # Add to front
+    history.insert(0, project_name)
+    
+    # Keep only last 10
+    history = history[:10]
+    
+    # Update settings
+    settings["project_history"] = history
+    save_app_settings(settings)
+
+def get_project_history() -> list:
+    """
+    Get the list of recent project names.
+    
+    Returns:
+        List of project name strings
+    """
+    settings = load_app_settings()
+    history = settings.get("project_history", [])
+    
+    # Ensure we only return valid strings (handle old format)
+    if not isinstance(history, list):
+        return []
+    
+    return [name for name in history if isinstance(name, str) and name.strip()]
 
 def get_project_config_path(output_folder: str) -> Path:
     """
