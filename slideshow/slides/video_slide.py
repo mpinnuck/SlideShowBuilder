@@ -3,6 +3,7 @@ import subprocess
 from slideshow.config import DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 
 class VideoSlide(SlideItem):
@@ -88,7 +89,7 @@ class VideoSlide(SlideItem):
         try:
             # Use ffprobe to get video dimensions
             cmd = [
-                "ffprobe", "-v", "quiet",
+                FFmpegPaths.ffprobe(), "-v", "quiet",
                 "-select_streams", "v:0",
                 "-show_entries", "stream=width,height",
                 "-of", "csv=s=x:p=0",

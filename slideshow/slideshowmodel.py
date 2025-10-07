@@ -14,6 +14,7 @@ from slideshow.config import DEFAULT_CONFIG
 from slideshow.transitions.transition_factory import TransitionFactory
 from slideshow.transitions.intro_title import IntroTitle
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 
 class Slideshow:
@@ -99,7 +100,7 @@ class Slideshow:
         """Return file duration (seconds) or None."""
         try:
             cmd = [
-                "ffprobe", "-v", "error",
+                FFmpegPaths.ffprobe(), "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 str(path),
@@ -397,7 +398,7 @@ class Slideshow:
                 self._log(f"[Slideshow] Applying 1s audio fade at {actual_duration-1:.2f}s")
                 fade_filter = f"afade=out:st={actual_duration - 1:.2f}:d=1"
                 cmd_pass3 = [
-                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(self.mux_no_fade),
+                    FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error", "-i", str(self.mux_no_fade),
                     "-c:v", "copy", "-af", fade_filter,
                     "-movflags", "+faststart", "-progress", "pipe:1",
                     str(output_path),

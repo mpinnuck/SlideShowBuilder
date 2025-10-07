@@ -294,8 +294,10 @@ class GUI(tk.Tk):
         self.update_idletasks()
 
     def select_input_folder(self):
+        import os
         old_folder = self.input_var.get()
-        folder = filedialog.askdirectory()
+        initial_dir = old_folder if old_folder else os.path.expanduser('~')
+        folder = filedialog.askdirectory(initialdir=initial_dir)
         if folder and folder != old_folder:
             self.input_var.set(folder)
             self.log_message(f"Input folder selected: {folder}")
@@ -309,13 +311,19 @@ class GUI(tk.Tk):
                     self.log_message(f"[FFmpegCache] Warning: Failed to clear cache: {e}")
 
     def select_output_folder(self):
-        folder = filedialog.askdirectory()
+        import os
+        current_folder = self.output_var.get()
+        initial_dir = current_folder if current_folder else os.path.expanduser('~')
+        folder = filedialog.askdirectory(initialdir=initial_dir)
         if folder:
             self.output_var.set(folder)
             self.log_message(f"Output folder selected: {folder}")
 
     def select_soundtrack(self):
-        file = filedialog.askopenfilename(filetypes=[("Audio Files", "*.mp3 *.wav")])
+        import os
+        current_file = self.soundtrack_var.get()
+        initial_dir = os.path.dirname(current_file) if current_file else os.path.expanduser('~')
+        file = filedialog.askopenfilename(initialdir=initial_dir, filetypes=[("Audio Files", "*.mp3 *.wav")])
         if file:
             self.soundtrack_var.set(file)
             self.log_message(f"Soundtrack selected: {file}")
@@ -1056,15 +1064,21 @@ class SettingsDialog:
     
     def _browse_temp_dir(self):
         """Browse for temporary directory"""
+        import os
         from tkinter import filedialog
-        directory = filedialog.askdirectory()
+        current_dir = self.temp_dir_var.get()
+        initial_dir = current_dir if current_dir else os.path.expanduser('~')
+        directory = filedialog.askdirectory(initialdir=initial_dir)
         if directory:
             self.temp_dir_var.set(directory)
     
     def _browse_cache_dir(self):
         """Browse for FFmpeg cache directory"""
+        import os
         from tkinter import filedialog
-        directory = filedialog.askdirectory()
+        current_dir = self.ffmpeg_cache_dir_var.get()
+        initial_dir = current_dir if current_dir else os.path.expanduser('~')
+        directory = filedialog.askdirectory(initialdir=initial_dir)
         if directory:
             self.ffmpeg_cache_dir_var.set(directory)
     
@@ -1457,6 +1471,54 @@ Parameters:
             # Button frame
             button_frame = ttk.Frame(main_frame)
             button_frame.pack(pady=(10, 0))
+            
+            # Copy to clipboard function
+            def copy_to_clipboard():
+                """Copy cache contents to clipboard in a readable format"""
+                try:
+                    import json
+                    
+                    # Build a readable text representation
+                    text = f"Cache Contents Summary\n"
+                    text += f"{'='*60}\n\n"
+                    text += f"Total Entries: {cache_data['total_entries']}\n"
+                    text += f"Video Clips: {len(clips)}\n"
+                    text += f"Extracted Frames: {len(frames)}\n\n"
+                    
+                    # Add clips details
+                    if clips:
+                        text += f"\nVIDEO CLIPS ({len(clips)}):\n"
+                        text += f"{'-'*60}\n"
+                        for i, entry in enumerate(clips, 1):
+                            text += f"\n{i}. {entry['source_file']}\n"
+                            text += f"   Operation: {entry['operation']}\n"
+                            text += f"   Size: {entry['size_mb']} MB\n"
+                            text += f"   Cache Key: {entry['cache_key']}\n"
+                            text += f"   Parameters: {json.dumps(entry['params'], indent=6)}\n"
+                    
+                    # Add frames details
+                    if frames:
+                        text += f"\n\nEXTRACTED FRAMES ({len(frames)}):\n"
+                        text += f"{'-'*60}\n"
+                        for i, entry in enumerate(frames, 1):
+                            text += f"\n{i}. {entry['source_file']}\n"
+                            text += f"   Operation: {entry['operation']}\n"
+                            text += f"   Size: {entry['size_mb']} MB\n"
+                            text += f"   Cache Key: {entry['cache_key']}\n"
+                            text += f"   Parameters: {json.dumps(entry['params'], indent=6)}\n"
+                    
+                    # Copy to clipboard
+                    browser_window.clipboard_clear()
+                    browser_window.clipboard_append(text)
+                    browser_window.update()
+                    
+                    messagebox.showinfo("Success", "Cache contents copied to clipboard!")
+                    
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to copy to clipboard:\n{str(e)}")
+            
+            copy_btn = ttk.Button(button_frame, text="Copy to Clipboard", command=copy_to_clipboard)
+            copy_btn.pack(side=tk.LEFT, padx=(0, 10))
             
             view_btn = ttk.Button(button_frame, text="View Selected", command=view_selected)
             view_btn.pack(side=tk.LEFT, padx=(0, 10))

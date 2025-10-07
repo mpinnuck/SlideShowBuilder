@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 from .base_transition import BaseTransition
+from .ffmpeg_paths import FFmpegPaths
 from .ffmpeg_cache import FFmpegCache
 # (Optional) only for type hints:
 # from slideshow.slides.slide_item import SlideItem
@@ -62,7 +63,7 @@ class FadeTransition(BaseTransition):
         to_frame.save(to_png)
 
         cmd = [
-            "ffmpeg", "-y",
+            FFmpegPaths.ffmpeg(), "-y",
             "-loop", "1", "-t", f"{self.duration:.3f}", "-i", str(from_png),
             "-loop", "1", "-t", f"{self.duration:.3f}", "-i", str(to_png),
             "-filter_complex",

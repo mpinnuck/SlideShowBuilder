@@ -108,10 +108,10 @@ class FFmpegCache:
     @classmethod
     def _generate_cache_key(cls, input_path: Path, params: Dict[str, Any]) -> str:
         """Generate a unique cache key based on input file and parameters."""
-        # Include file path, modification time, and size for uniqueness
+        # Use filename and size for file identity
+        # Size is important: if user replaces the file, size likely changes → cache miss → re-render
         file_stats = {
-            "path": str(input_path.absolute()),
-            "mtime": input_path.stat().st_mtime if input_path.exists() else 0,
+            "name": input_path.name,
             "size": input_path.stat().st_size if input_path.exists() else 0
         }
         

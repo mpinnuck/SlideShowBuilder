@@ -5,11 +5,12 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 def get_video_info(video_path):
     """Return (width, height, fps) of a video using ffprobe."""
     cmd = [
-        "ffprobe", "-v", "error",
+        FFmpegPaths.ffprobe(), "-v", "error",
         "-select_streams", "v:0",
         "-show_entries", "stream=width,height,r_frame_rate",
         "-of", "default=noprint_wrappers=1:nokey=1",
@@ -27,7 +28,7 @@ def get_video_info(video_path):
 def get_video_duration(video_path):
     """Return the duration of a video in seconds using ffprobe."""
     cmd = [
-        "ffprobe", "-v", "error",
+        FFmpegPaths.ffprobe(), "-v", "error",
         "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1",
         str(video_path)
@@ -58,15 +59,15 @@ def extract_frame(video_path, last=False):
     try:
         if last:
             # Seek slightly before end to avoid sseof=0 edge cases
-            cmd = ["ffmpeg", "-y", "-sseof", "-0.1", "-i", str(video_path),
+            cmd = [FFmpegPaths.ffmpeg(), "-y", "-sseof", "-0.1", "-i", str(video_path),
                    "-vframes", "1", tmp_path]
         else:
-            cmd = ["ffmpeg", "-y", "-i", str(video_path), "-vframes", "1", tmp_path]
+            cmd = [FFmpegPaths.ffmpeg(), "-y", "-i", str(video_path), "-vframes", "1", tmp_path]
 
         result = subprocess.run(cmd, capture_output=True)
         if result.returncode != 0:
             # Fallback to seeking 1s before end
-            cmd = ["ffmpeg", "-y", "-sseof", "-1", "-i", str(video_path),
+            cmd = [FFmpegPaths.ffmpeg(), "-y", "-sseof", "-1", "-i", str(video_path),
                    "-vframes", "1", tmp_path]
             subprocess.run(cmd, check=True, capture_output=True)  # Suppress verbose output
 

@@ -1,7 +1,7 @@
 # slideshow/transitions/origami_frame_transition.py
 """
 Note: This base class is only for two-phase origami folds (start fold + finish fold).
-If your transition doesn’t fit this structure (e.g. center folds with wobble),
+If your transition doesn't fit this structure (e.g. center folds with wobble),
 subclass BaseTransition directly instead.
 """
 import moderngl
@@ -9,7 +9,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from slideshow.transitions.base_transition import BaseTransition
 from slideshow.transitions.utils import save_frames_as_video
-from slideshow.transitions.ffmpeg_cache import FFmpegCache
 
 
 class OrigamiFrameTransition(BaseTransition, ABC):
@@ -64,39 +63,17 @@ class OrigamiFrameTransition(BaseTransition, ABC):
         from_slide = slides[index]
         to_slide = slides[index + 1]
         
-        # Create cache key based on the transition parameters and involved slides
+        # Get the rendered clips for actual processing
         from_clip = from_slide.get_rendered_clip()
         to_clip = to_slide.get_rendered_clip()
         
-        # Use a virtual path combining both slides for cache key
-        virtual_path = Path(f"origami_transition_{from_clip.stem}_to_{to_clip.stem}")
-        
-        cache_params = {
-            "operation": "origami_frame_transition",
-            "transition_type": self.__class__.__name__,
-            "duration": self.duration,
-            "fps": self.fps,
-            "from_slide": str(from_clip.absolute()),
-            "to_slide": str(to_clip.absolute()),
-            "from_mtime": from_clip.stat().st_mtime if from_clip.exists() else 0,
-            "to_mtime": to_clip.stat().st_mtime if to_clip.exists() else 0,
-        }
-        
-        # Check cache first
-        cached_transition = FFmpegCache.get_cached_clip(virtual_path, cache_params)
-        if cached_transition:
-            # Copy cached transition to output path
-            import shutil
-            shutil.copy2(cached_transition, output_path)
-            return 1
+        # Note: Caching is handled at the higher level in origami_transition.py
+        # No need to cache here - avoids duplicate cache entries
         
         from_img = from_slide.get_from_image()
         to_img = to_slide.get_to_image()
 
         frames = self.render_frames(from_img, to_img)
         save_frames_as_video(frames, output_path, fps=self.fps)
-
-        # Store result in cache for future use
-        FFmpegCache.store_clip(virtual_path, cache_params, output_path)
 
         return 1  # Most origami transitions consume 1 slide

@@ -11,6 +11,7 @@ import tempfile
 import subprocess
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 
 class MultiSlide(SlideItem):
@@ -51,7 +52,7 @@ class MultiSlide(SlideItem):
                 elif main_file.suffix.lower() in ['.mp4', '.mov']:
                     # Use ffprobe for video files
                     cmd = [
-                        "ffprobe", "-v", "quiet",
+                        FFmpegPaths.ffprobe(), "-v", "quiet",
                         "-select_streams", "v:0", 
                         "-show_entries", "stream=width,height",
                         "-of", "csv=s=x:p=0",
@@ -318,8 +319,7 @@ class MultiSlide(SlideItem):
         for path in media_paths:
             if path.exists():
                 media_file_info.append({
-                    "path": str(path.absolute()),
-                    "mtime": path.stat().st_mtime,
+                    "name": path.name,  # Use filename only, not absolute path
                     "size": path.stat().st_size
                 })
         
