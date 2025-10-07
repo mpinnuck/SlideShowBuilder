@@ -1,11 +1,82 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, font
 import threading
 import sys
 import re
 from pathlib import Path
 from slideshow.config import load_config, save_config, save_app_settings, load_app_settings, get_project_config_path
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+
+def wide_messagebox(msg_type, title, message):
+    """Create a messagebox that's 3 times wider than default."""
+    top = tk.Toplevel()
+    top.title(title)
+    top.resizable(False, False)
+    
+    # Make window modal
+    top.transient()
+    top.grab_set()
+    
+    # Create wider frame
+    frame = ttk.Frame(top, padding=20)
+    frame.pack(fill=tk.BOTH, expand=True)
+    
+    # Add icon and message with wider label (3x normal width ~= 900 pixels)
+    msg_frame = ttk.Frame(frame)
+    msg_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+    
+    # Icon
+    if msg_type == "info":
+        icon = "ℹ️"
+    elif msg_type == "error":
+        icon = "⚠️"
+    elif msg_type == "question":
+        icon = "❓"
+    else:
+        icon = ""
+    
+    if icon:
+        ttk.Label(msg_frame, text=icon, font=('Arial', 32)).pack(side=tk.LEFT, padx=(0, 10))
+    
+    # Message with wider width
+    msg_label = ttk.Label(msg_frame, text=message, wraplength=800, justify=tk.LEFT)
+    msg_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    
+    # Button frame
+    btn_frame = ttk.Frame(frame)
+    btn_frame.pack()
+    
+    result = [None]
+    
+    def on_yes():
+        result[0] = True
+        top.destroy()
+    
+    def on_no():
+        result[0] = False
+        top.destroy()
+    
+    def on_ok():
+        result[0] = True
+        top.destroy()
+    
+    # Add buttons based on type
+    if msg_type == "question":
+        ttk.Button(btn_frame, text="Yes", command=on_yes, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="No", command=on_no, width=10).pack(side=tk.LEFT, padx=5)
+    else:
+        ttk.Button(btn_frame, text="OK", command=on_ok, width=10).pack()
+    
+    # Center window
+    top.update_idletasks()
+    width = top.winfo_width()
+    height = top.winfo_height()
+    x = (top.winfo_screenwidth() // 2) - (width // 2)
+    y = (top.winfo_screenheight() // 2) - (height // 2)
+    top.geometry(f"+{x}+{y}")
+    
+    top.wait_window()
+    return result[0]
 
 def sanitize_project_name(name: str) -> str:
     """Remove spaces and special characters from project name for folder."""
@@ -49,8 +120,8 @@ class GUI(tk.Tk):
     
     def center_window(self):
             # Set initial size before centering
-            initial_width = 800  # Make window wider
-            initial_height = 600  # Make window taller too
+            initial_width = 920  # 15% larger than 800 (800 * 1.15 = 920)
+            initial_height = 600  # Keep height same
             
             self.update_idletasks()
             
@@ -66,7 +137,7 @@ class GUI(tk.Tk):
             x = (sw // 2) - (w // 2)
             y = (sh // 2) - (h // 2)
             self.geometry(f"{w}x{h}+{x}+{y}")
-            self.minsize(800, 500)  # Increase minimum size too
+            self.minsize(920, 500)  # Update minimum width to match initial
 
     def create_widgets(self):
         # Project Info
@@ -1269,40 +1340,40 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
             else:
                 message = "FFmpeg cache is disabled."
                 
-            messagebox.showinfo("Cache Statistics", message)
+            wide_messagebox("info", "Cache Statistics", message)
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to get cache statistics:\\n{str(e)}")
+            wide_messagebox("error", "Error", f"Failed to get cache statistics:\\n{str(e)}")
     
     def _clear_cache(self):
         """Clear the entire FFmpeg cache"""
-        result = messagebox.askyesno("Clear Cache", 
-                                   "Are you sure you want to clear the entire FFmpeg cache?\\n"
-                                   "This will delete all cached video clips and frames.")
+        result = wide_messagebox("question", "Clear Cache",
+                                "Are you sure you want to clear the entire FFmpeg cache?\n"
+                                "This will delete all cached video clips and frames.")
         if result:
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
                 FFmpegCache.clear_cache()
-                messagebox.showinfo("Cache Cleared", "FFmpeg cache has been cleared successfully.")
+                # No confirmation - user already pressed OK
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to clear cache:\\n{str(e)}")
+                wide_messagebox("error", "Error", f"Failed to clear cache:\n{str(e)}")
     
     def _cleanup_cache(self):
         """Clean up old cache entries"""
-        result = messagebox.askyesno("Cleanup Cache", 
-                                   "Remove cache entries older than 30 days?")
+        result = wide_messagebox("question", "Cleanup Cache",
+                                "Remove cache entries older than 30 days?")
         if result:
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
                 FFmpegCache.cleanup_old_entries(30)
-                messagebox.showinfo("Cache Cleaned", "Old cache entries have been cleaned up successfully.")
+                # No confirmation - user already pressed OK
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to cleanup cache:\\n{str(e)}")
+                wide_messagebox("error", "Error", f"Failed to cleanup cache:\n{str(e)}")
     
     def _reset_cache_stats(self):
         """Reset cache hit/miss statistics"""
-        result = messagebox.askyesno("Reset Cache Statistics", 
-                                   "Reset cache hit/miss statistics to zero?\\n\\nThis will not affect cached files, only the performance counters.")
+        result = wide_messagebox("question", "Reset Cache Statistics",
+                                "Reset cache hit/miss statistics to zero?\n\nThis will not affect cached files, only the performance counters.")
         if result:
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
@@ -1316,9 +1387,9 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
                 FFmpegCache.configure(cache_dir)
                 FFmpegCache.reset_stats()
                 
-                messagebox.showinfo("Statistics Reset", "Cache statistics have been reset successfully.")
+                # No confirmation - user already pressed OK
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to reset cache statistics:\\n{str(e)}")
+                wide_messagebox("error", "Error", f"Failed to reset cache statistics:\n{str(e)}")
     
     def _browse_cache_contents(self):
         """Show detailed cache contents browser"""

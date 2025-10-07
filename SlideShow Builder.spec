@@ -1,4 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
+# Multi-file (onedir) build - Instant startup (RECOMMENDED)
+# For single-file build (40 second startup), see "SlideShow Builder-onefile.spec"
 
 
 a = Analysis(

@@ -243,3 +243,5 @@ PROJECT_STRUCTURE.md
 # End of .gitignore
 
 requirements_full.txt
+SlideShow Builder-onedir.spec
+SlideShow Builder-onefile.spec

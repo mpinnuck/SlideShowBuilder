@@ -83,20 +83,38 @@ brew install ffmpeg
 
 ### Building the macOS App
 
-The project includes a configured PyInstaller spec file for creating a native macOS application:
+The project includes PyInstaller spec files for creating a native macOS application with two build options:
 
+**Option 1: Multi-File Build (RECOMMENDED)**
 ```bash
 # Activate virtual environment
 source .venv/bin/activate
 
-# Build the app
+# Build multi-file app (onedir)
+pyinstaller -y "SlideShow Builder-onedir.spec"
+```
+
+**Pros**: Instant startup (~1 second), standard macOS app bundle  
+**Cons**: Larger bundle size (~200MB)
+
+**Option 2: Single-File Build**
+```bash
+# Activate virtual environment
+source .venv/bin/activate
+
+# Build single-file app (onefile)
 pyinstaller -y "SlideShow Builder.spec"
 ```
+
+**Pros**: Smaller executable, cleaner appearance  
+**Cons**: Very slow startup (~40 seconds due to extraction overhead)
 
 The built application will be in `dist/SlideShow Builder.app` and can be:
 - Launched from Finder by double-clicking
 - Copied to `/Applications` for system-wide access
 - Distributed to other Macs (ensure they have FFmpeg installed)
+
+**Recommendation**: Use the **multi-file build** for best user experience. The 40-second startup delay of single-file builds makes them impractical for regular use.
 
 ## Usage
 
