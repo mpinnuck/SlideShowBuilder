@@ -52,7 +52,7 @@ class VideoSlide(SlideItem):
         self._rendered_clip = clip_path
 
         ffmpeg_cmd = [
-            "ffmpeg", "-y",
+            FFmpegPaths.ffmpeg(), "-y",
             "-i", str(self.path),
             "-vf", (
                 f"fps={self.fps},"

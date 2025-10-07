@@ -159,7 +159,50 @@ python slideshowbuilder.py
 
 ### Configuration File
 
-Settings are automatically saved to `slideshow_config.json` and persist between sessions.
+**Two-Level Configuration Architecture:**
+
+SlideShow Builder uses a sophisticated two-level configuration system for flexible project management:
+
+1. **Global App Settings** (`~/SlideshowBuilder/slideshow_settings.json`):
+   - Stores application-level preferences
+   - Remembers the last opened project path
+   - Persists across all projects and sessions
+   - Automatically created on first launch
+
+2. **Project-Specific Settings** (`<output_folder>/slideshow_config.json`):
+   - Each project has its own configuration file
+   - Stored in the project's output folder
+   - Contains all slideshow settings (durations, transitions, etc.)
+   - Automatically loaded when you select an existing project folder
+
+**How It Works:**
+
+- **New Project**: When you set a project name, the app creates a folder structure:
+  ```
+  media/output/ProjectName/
+  ├── slideshow_config.json       # Project settings
+  ├── ProjectName.mp4             # Final video (after export)
+  └── working/
+      └── ffmpeg_cache/           # Cached transitions
+  ```
+
+- **Existing Project**: When you select an output folder that already exists:
+  - The app detects the existing `slideshow_config.json`
+  - Automatically loads all project settings
+  - Updates the UI to match the saved configuration
+  - Updates global settings to remember this project
+
+- **Project Name Changes**: 
+  - Changing the project name automatically updates the output path
+  - Uses sanitized names (removes spaces): "My Project" → "MyProject"
+  - If the new folder exists, loads that project's settings
+  - If new, creates a fresh project with current settings
+
+**User Experience:**
+- Settings are preserved when you return to a project
+- Each project maintains its own cache for faster re-renders
+- Global settings remember your last project for quick resumption
+- All configuration happens automatically - no manual file editing needed
 
 ## Project Structure
 
@@ -167,7 +210,7 @@ Settings are automatically saved to `slideshow_config.json` and persist between 
 SlideShowBuilder/
 ├── slideshow/                     # Core package
 │   ├── __init__.py
-│   ├── config.py                 # Configuration management
+│   ├── config.py                 # Two-level configuration system
 │   ├── controller.py             # MVC controller
 │   ├── gui.py                    # Tkinter GUI with settings dialog
 │   ├── slideshowmodel.py         # Core slideshow rendering logic
@@ -184,17 +227,29 @@ SlideShowBuilder/
 │       ├── origami_fold_*.py     # Various origami effects
 │       ├── intro_title.py        # Title screen renderer
 │       ├── ffmpeg_cache.py       # Intelligent output caching
+│       ├── ffmpeg_paths.py       # FFmpeg executable detection
 │       └── utils.py              # Shared utilities
 ├── data/                         # Sample/test data
 │   ├── output/                   # Generated videos
 │   ├── slides/                   # Sample media files
 │   └── soundtracks/              # Sample audio files
+├── ~/SlideshowBuilder/           # User config directory
+│   └── slideshow_settings.json   # Global app settings
 ├── slideshowbuilder.py           # Main entry point
 ├── SlideShow Builder.spec        # PyInstaller build configuration
 ├── requirements.txt              # Python dependencies
-├── slideshow_config.json         # User configuration (auto-saved)
 ├── icon.icns                     # macOS app icon
 └── README.md                     # This file
+
+# Each project folder contains:
+<output_folder>/ProjectName/
+├── slideshow_config.json         # Project-specific settings
+├── ProjectName.mp4               # Exported video
+└── working/
+    └── ffmpeg_cache/             # Project-specific cache
+        ├── clips/
+        ├── frames/
+        └── temp/
 ```
 
 ## Supported Formats
@@ -208,7 +263,7 @@ SlideShowBuilder/
 
 ### Architecture
 
-The application follows an MVC (Model-View-Controller) architecture:
+The application follows an MVC (Model-View-Controller) architecture with a two-level configuration system:
 
 - **Model** (`slideshowmodel.py`): Core rendering logic with FFmpeg pipeline
   - Slide loading and validation with progress reporting
@@ -220,11 +275,39 @@ The application follows an MVC (Model-View-Controller) architecture:
   - Three-tab Settings dialog (Basic, Transitions, Rendering)
   - Real-time preview of multi-image layouts
   - Progress bars and status updates during export
+  - Focus-based updates (only saves on Tab/Enter, not every keystroke)
   
 - **Controller** (`controller.py`): Mediates between Model and View
   - Event handling and validation
-  - Configuration persistence via JSON
+  - Configuration persistence via two-level JSON system
   - FFmpegCache initialization at export start
+
+### Configuration System
+
+The two-level configuration architecture separates app-wide settings from project-specific settings:
+
+**Global Settings** (`~/SlideshowBuilder/slideshow_settings.json`):
+- `last_project_path`: Path to most recently used project
+- Application-wide preferences
+- Persists across all projects
+
+**Project Settings** (`<output_folder>/ProjectName/slideshow_config.json`):
+- All slideshow configuration (durations, transitions, effects, etc.)
+- Project-specific output path and name
+- Cache directory location
+- Merged with defaults on load to ensure backward compatibility
+
+**Key Functions** (`slideshow/config.py`):
+- `load_app_settings()`: Load global preferences
+- `save_app_settings(settings)`: Save global preferences
+- `load_config(output_folder)`: Load project settings from folder
+- `save_config(config, output_folder)`: Save project settings
+- `get_project_config_path(output_folder)`: Get path to project config
+
+**Smart Behavior**:
+- **New Project**: Creates folder structure with cache, saves config, updates global settings
+- **Existing Project**: Loads existing config, updates UI, remembers project in global settings
+- **Project Name Change**: Updates path, detects if folder exists, loads or creates accordingly
 
 ### Cache System
 
@@ -286,12 +369,33 @@ The `FFmpegCache` singleton (in `slideshow/transitions/ffmpeg_cache.py`) provide
 The intelligent caching system dramatically speeds up repeated exports:
 
 - **Cache Key Generation**: SHA-256 hash of render parameters (resolution, transitions, effects)
+- **Source File Properties**: Uses filename and size for cache keys, not intermediate clips
 - **Hit Detection**: Instantly reuses existing outputs when parameters match
 - **Statistics**: Real-time tracking of cache hits, misses, total size
 - **Directory Structure**: Organized subfolders for clips, frames, temp files
 - **User Control**: Browse cache in Finder, view statistics, clear old entries
 - **Persistence**: Survives between application sessions
+- **Per-Project Caching**: Each project has its own cache directory
 - **Safety**: Cache configuration must be called before any rendering operation
+
+### FFmpeg Path Detection
+
+The app automatically finds FFmpeg on macOS without requiring PATH configuration:
+
+**FFmpegPaths Singleton** (`slideshow/transitions/ffmpeg_paths.py`):
+- Searches standard macOS locations:
+  - `/usr/local/bin` (Intel Mac Homebrew)
+  - `/opt/homebrew/bin` (Apple Silicon Homebrew)
+  - `/usr/bin` (system installation)
+- Caches executable paths for performance
+- Provides `FFmpegPaths.ffmpeg()` and `FFmpegPaths.ffprobe()` classmethods
+- Used throughout the codebase instead of hardcoded "ffmpeg" strings
+
+**Benefits**:
+- Works from Finder launch (no terminal PATH needed)
+- Supports both Intel and Apple Silicon Macs
+- Automatic detection with no configuration required
+- Graceful error messages if FFmpeg not found
 
 ### Performance
 
@@ -318,6 +422,10 @@ See `requirements.txt` for complete Python dependencies:
 Major enhancements and architectural improvements:
 
 **New Features:**
+- **Two-Level Configuration System**: Global app settings + per-project configs
+- **Project-Based Folder Structure**: Each project gets its own folder with cache
+- **Smart Project Detection**: Automatically loads existing projects or creates new ones
+- **Focus-Based Updates**: No more keystroke spam, updates only on Tab/Enter
 - Multi-image composite layouts (3-photo arrangements)
 - Origami fold transitions (center, left-right, up-down, multi-directional)
 - Advanced Settings dialog with 3 tabs (Transitions, Title/Intro, Advanced)
@@ -326,19 +434,33 @@ Major enhancements and architectural improvements:
 - Progress logging for large file sets (1000+ media files)
 
 **Technical Improvements:**
+- **FFmpegPaths singleton**: Automatic FFmpeg detection in standard macOS locations
+- **Cache optimization**: Source file properties used for keys, no duplicate caching
+- **Configuration architecture**: Separation of app-wide and project-specific settings
+- **Project name sanitization**: Removes spaces/hyphens for clean folder names
 - FFmpegCache singleton pattern with configure() method
-- Proper Finder launch support via Info.plist LSEnvironment
+- Proper Finder launch support via FFmpeg path detection
 - AppleScript error handling in debugger environments
 - Code cleanup (removed diagnostic prints)
 - PyInstaller .spec file for reproducible builds
 - Cache hit/miss tracking with performance metrics
 
 **UI Enhancements:**
+- **Smart folder management**: Detects new vs existing projects
+- **User feedback**: Clear logging for project name changes and config operations
+- **Auto-path generation**: Project name automatically creates folder structure
 - Tabbed settings dialog for organized configuration
 - Cache statistics display (hits, misses, total size)
 - Browse cache directory directly from app
 - Real-time multi-image layout preview
 - Status updates during file loading
+
+**Configuration System:**
+- Global settings: `~/SlideshowBuilder/slideshow_settings.json`
+- Project settings: `<output_folder>/ProjectName/slideshow_config.json`
+- Automatic project detection and loading
+- Per-project cache directories
+- Last project path persistence
 
 ### v1.0.0
 Initial release with core slideshow functionality:

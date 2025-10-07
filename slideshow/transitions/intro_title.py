@@ -16,6 +16,7 @@ import math
 import os
 import slideshow.config  
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 
 class IntroTitle:
@@ -99,7 +100,7 @@ class IntroTitle:
 
         # Use FFmpeg pipe for direct frame streaming (much faster than temp files)
         cmd = [
-            "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
+            FFmpegPaths.ffmpeg(), "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
             "-s", f"{self.resolution[0]}x{self.resolution[1]}",
             "-pix_fmt", "rgba", "-r", str(self.fps), "-i", "-",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",

@@ -1,10 +1,21 @@
 import json
 from pathlib import Path
+import os
 
+# Global app settings directory
+APP_SETTINGS_DIR = Path.home() / "SlideshowBuilder"
+APP_SETTINGS_FILE = APP_SETTINGS_DIR / "slideshow_settings.json"
+
+# Default app-level settings
+DEFAULT_APP_SETTINGS = {
+    "last_project_path": ""
+}
+
+# Default project-level settings
 DEFAULT_CONFIG = {
     "project_name": "MyProject",
     "input_folder": "media/input",
-    "output_folder": "media/output",
+    "output_folder": "media/output/MyProject",  # Default includes project name
     "photo_duration": 3.0,
     "video_duration": 5.0,
     "transition_duration": 1.0,
@@ -45,30 +56,121 @@ DEFAULT_CONFIG = {
     "keep_intermediate_frames": False
 }
 
-CONFIG_FILE = Path("slideshow_config.json")
+# Project config file name (stored in output folder)
+PROJECT_CONFIG_FILE = "slideshow_config.json"
 
-def load_config(path: Path = CONFIG_FILE) -> dict:
+def load_app_settings() -> dict:
     """
-    Load config from JSON file and merge with DEFAULT_CONFIG to ensure all keys exist.
+    Load global app settings from ~/SlideshowBuilder/slideshow_settings.json
+    Contains last project path and other app-level preferences.
+    """
+    settings = DEFAULT_APP_SETTINGS.copy()
+    
+    if APP_SETTINGS_FILE.exists():
+        try:
+            with open(APP_SETTINGS_FILE, "r") as f:
+                user_settings = json.load(f)
+                if isinstance(user_settings, dict):
+                    settings.update(user_settings)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[Config] WARNING: Failed to load app settings ({e}), using defaults.")
+    
+    return settings
+
+def save_app_settings(settings: dict):
+    """
+    Save global app settings to ~/SlideshowBuilder/slideshow_settings.json
+    """
+    # Ensure directory exists
+    APP_SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    merged = DEFAULT_APP_SETTINGS.copy()
+    merged.update(settings)
+    
+    try:
+        with open(APP_SETTINGS_FILE, "w") as f:
+            json.dump(merged, f, indent=2)
+    except OSError as e:
+        print(f"[Config] WARNING: Failed to save app settings ({e})")
+
+def get_project_config_path(output_folder: str) -> Path:
+    """
+    Get the path to the project config file in the output folder.
+    """
+    if not output_folder:
+        return Path(PROJECT_CONFIG_FILE)  # Fallback to current directory
+    
+    output_path = Path(output_folder)
+    return output_path / PROJECT_CONFIG_FILE
+
+def load_config(output_folder: str = None) -> dict:
+    """
+    Load project config from slideshow_config.json in the output folder.
+    If output_folder is not specified, tries to load from last project.
     User-specified values override defaults, but missing keys are filled from defaults.
     """
     config = DEFAULT_CONFIG.copy()
-    if path.exists():
+    
+    # Determine config path
+    if output_folder:
+        config_path = get_project_config_path(output_folder)
+    else:
+        # Try to load from last project
+        app_settings = load_app_settings()
+        last_project = app_settings.get("last_project_path", "")
+        if last_project:
+            config_path = Path(last_project)
+        else:
+            config_path = Path(PROJECT_CONFIG_FILE)  # Fallback to current directory
+    
+    if config_path.exists():
         try:
-            with open(path, "r") as f:
+            with open(config_path, "r") as f:
                 user_config = json.load(f)
                 if isinstance(user_config, dict):
                     config.update(user_config)
         except (json.JSONDecodeError, OSError) as e:
-            print(f"[Config] WARNING: Failed to load config ({e}), using defaults.")
+            print(f"[Config] WARNING: Failed to load config from {config_path} ({e}), using defaults.")
+    
     return config
 
-def save_config(config: dict, path: Path = CONFIG_FILE):
+def save_config(config: dict, output_folder: str):
     """
-    Save configuration to disk. Missing keys will not be stripped — 
-    we always persist a complete config merged with defaults.
+    Save project configuration to slideshow_config.json in the output folder.
+    Also updates the app settings to remember this as the last project.
+    If the output folder is new, creates it with ffmpeg_cache structure.
     """
+    if not output_folder:
+        print("[Config] WARNING: No output folder specified, cannot save config")
+        return
+    
+    # Get project config path
+    config_path = get_project_config_path(output_folder)
+    
+    # Check if this is a new output folder
+    is_new_folder = not config_path.parent.exists()
+    
+    # Ensure output folder exists
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # If this is a new folder, create the ffmpeg_cache structure
+    if is_new_folder:
+        cache_dir = config_path.parent / "working" / "ffmpeg_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[Config] Created new project folder structure with cache at: {cache_dir}")
+    
+    # Merge with defaults and save
     merged = DEFAULT_CONFIG.copy()
     merged.update(config)
-    with open(path, "w") as f:
-        json.dump(merged, f, indent=2)
+    
+    try:
+        with open(config_path, "w") as f:
+            json.dump(merged, f, indent=2)
+        
+        # Update app settings to remember this project
+        app_settings = load_app_settings()
+        app_settings["last_project_path"] = str(config_path)
+        save_app_settings(app_settings)
+        
+    except OSError as e:
+        print(f"[Config] WARNING: Failed to save config to {config_path} ({e})")

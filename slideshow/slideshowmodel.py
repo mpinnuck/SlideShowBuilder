@@ -347,7 +347,7 @@ class Slideshow:
             # --- Pass 1: Assemble video-only ---
             self._log(f"[Slideshow] Assembling video-only...")
             cmd_pass1 = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
                 "-c:v", "libx264", "-preset", "fast",
                 "-movflags", "+faststart", "-progress", "pipe:1",
@@ -370,7 +370,7 @@ class Slideshow:
             self._log("[Slideshow] Muxing soundtrack..." if has_soundtrack else "[Slideshow] Finalizing video (no soundtrack)...")
             cmd_pass2 = (
                 [
-                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                     "-i", str(self.video_only),
                     "-stream_loop", "-1", "-i", str(soundtrack_path),
                     "-map", "0:v", "-map", "1:a",
@@ -381,7 +381,7 @@ class Slideshow:
                 ]
                 if has_soundtrack
                 else [
-                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                     "-i", str(self.video_only),
                     "-c", "copy", "-movflags", "+faststart",
                     "-progress", "pipe:1", str(self.mux_no_fade),

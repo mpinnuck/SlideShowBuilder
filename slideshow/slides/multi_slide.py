@@ -267,7 +267,7 @@ class MultiSlide(SlideItem):
             
             # Use FFmpeg to extract the frame at this time
             cmd = [
-                "ffmpeg", "-y",
+                FFmpegPaths.ffmpeg(), "-y",
                 "-i", str(video_path),
                 "-ss", str(time_position),
                 "-vframes", "1",
@@ -383,7 +383,7 @@ class MultiSlide(SlideItem):
         import numpy as np
         
         cmd = [
-            "ffmpeg", "-y",
+            FFmpegPaths.ffmpeg(), "-y",
             "-f", "rawvideo",
             "-pixel_format", "rgb24", 
             "-video_size", f"{self.resolution[0]}x{self.resolution[1]}",

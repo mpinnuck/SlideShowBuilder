@@ -2,9 +2,21 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
 import sys
+import re
 from pathlib import Path
-from slideshow.config import load_config, save_config
+from slideshow.config import load_config, save_config, save_app_settings, load_app_settings, get_project_config_path
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+
+def sanitize_project_name(name: str) -> str:
+    """Remove spaces and special characters from project name for folder."""
+    return re.sub(r'[\s\-]+', '', name)
+
+def build_output_path(base_folder: str, project_name: str) -> str:
+    """Build full output path: base_folder/projectname (no spaces)."""
+    if not base_folder or not project_name:
+        return base_folder
+    sanitized = sanitize_project_name(project_name)
+    return str(Path(base_folder) / sanitized)
 
 class GUI(tk.Tk):
     def __init__(self, controller, version="1.0.0"):
@@ -22,6 +34,7 @@ class GUI(tk.Tk):
             pass
         
         self.controller = controller
+        # Load config - will try to load from last project
         self.config_data = load_config()
         self.create_widgets()
         self.center_window()
@@ -59,8 +72,10 @@ class GUI(tk.Tk):
         # Project Info
         ttk.Label(self, text="Project Name:").grid(row=0, column=0, sticky="e")
         self.name_var = tk.StringVar(value=self.config_data.get("project_name", "Untitled"))
-        self.name_var.trace_add('write', lambda *args: self._auto_save_config())
-        ttk.Entry(self, textvariable=self.name_var, width=40).grid(row=0, column=1, columnspan=2, sticky="we")
+        name_entry = ttk.Entry(self, textvariable=self.name_var, width=40)
+        name_entry.grid(row=0, column=1, columnspan=2, sticky="we")
+        name_entry.bind('<FocusOut>', lambda e: self._on_project_name_change())
+        name_entry.bind('<Return>', lambda e: self._on_project_name_change())
 
         # Input Folder
         ttk.Label(self, text="Input Folder:").grid(row=1, column=0, sticky="e")
@@ -72,8 +87,10 @@ class GUI(tk.Tk):
         # Output Folder
         ttk.Label(self, text="Output Folder:").grid(row=2, column=0, sticky="e")
         self.output_var = tk.StringVar(value=self.config_data.get("output_folder", ""))
-        self.output_var.trace_add('write', lambda *args: self._auto_save_config())
-        ttk.Entry(self, textvariable=self.output_var, width=40).grid(row=2, column=1, sticky="we")
+        output_entry = ttk.Entry(self, textvariable=self.output_var, width=40)
+        output_entry.grid(row=2, column=1, sticky="we")
+        output_entry.bind('<FocusOut>', lambda e: self._auto_save_config())
+        output_entry.bind('<Return>', lambda e: self._auto_save_config())
         ttk.Button(self, text="Browse", command=self.select_output_folder).grid(row=2, column=2)
 
         # Soundtrack
@@ -313,12 +330,67 @@ class GUI(tk.Tk):
     def select_output_folder(self):
         import os
         current_folder = self.output_var.get()
-        initial_dir = current_folder if current_folder else os.path.expanduser('~')
+        # Strip project name folder if it exists to get base folder
+        if current_folder:
+            parent = str(Path(current_folder).parent)
+            initial_dir = parent if parent != '.' else os.path.expanduser('~')
+        else:
+            initial_dir = os.path.expanduser('~')
+        
         folder = filedialog.askdirectory(initialdir=initial_dir)
         if folder:
-            self.output_var.set(folder)
-            self.log_message(f"Output folder selected: {folder}")
+            # Build full path with project name
+            project_name = self.name_var.get()
+            full_path = build_output_path(folder, project_name)
+            self.output_var.set(full_path)
+            self.log_message(f"Output folder selected: {full_path}")
+            
+            # Try to load project config from this folder
+            try:
+                project_config = load_config(full_path)
+                self.config_data.update(project_config)
+                self._update_ui_from_config()
+                self.log_message(f"Loaded project settings from {full_path}")
+            except Exception as e:
+                self.log_message(f"No existing project settings in folder (will create on save)")
 
+    def _on_project_name_change(self):
+        """Handle project name changes on focus loss - update output folder path and load/save config."""
+        new_project_name = self.name_var.get()
+        self.log_message(f"Project name changed to: {new_project_name}")
+        
+        current_output = self.output_var.get()
+        if current_output:
+            # Get base folder (parent of current project folder)
+            base_folder = str(Path(current_output).parent)
+            # Rebuild with new project name
+            new_output_path = build_output_path(base_folder, new_project_name)
+            if new_output_path != current_output:
+                self.output_var.set(new_output_path)
+                self.log_message(f"Output path updated to: {new_output_path}")
+                
+                # Check if the new path exists
+                output_path = Path(new_output_path)
+                if output_path.exists() and (output_path / "slideshow_config.json").exists():
+                    # Load existing project config
+                    try:
+                        existing_config = load_config(new_output_path)
+                        self.config_data.update(existing_config)
+                        self._update_ui_from_config()
+                        self.log_message(f"Loaded existing project settings from: {new_output_path}")
+                    except Exception as e:
+                        self.log_message(f"Could not load config from {new_output_path}: {e}")
+                else:
+                    # New project - save current config
+                    self.log_message(f"Creating new project: {new_project_name}")
+                    self._auto_save_config()
+            else:
+                # No path change, just save
+                self._auto_save_config()
+        else:
+            # No output path yet
+            self._auto_save_config()
+    
     def select_soundtrack(self):
         import os
         current_file = self.soundtrack_var.get()
@@ -428,9 +500,15 @@ class GUI(tk.Tk):
     
     def _auto_save_config(self):
         """Automatically update and save config when controls change"""
+        # Skip if we're updating UI from loaded config
+        if getattr(self, '_updating_ui', False):
+            return
+        
         old_input_folder = self.config_data.get("input_folder", "")
+        old_output_folder = self.config_data.get("output_folder", "")
         new_config = self._get_current_config()
         new_input_folder = new_config.get("input_folder", "")
+        new_output_folder = new_config.get("output_folder", "")
         
         # Check if input folder changed and clear cache if so
         if old_input_folder and new_input_folder != old_input_folder:
@@ -441,8 +519,57 @@ class GUI(tk.Tk):
                 self.log_message(f"[FFmpegCache] Warning: Failed to clear cache: {e}")
         
         self.config_data.update(new_config)
-        save_config(self.config_data)
+        
+        # Save config to output folder if specified
+        output_folder = new_config.get("output_folder", "")
+        if output_folder:
+            output_path = Path(output_folder)
+            config_file = output_path / "slideshow_config.json"
+            
+            # Only load existing config if output folder changed
+            output_folder_changed = old_output_folder != new_output_folder
+            
+            if output_folder_changed and output_path.exists() and config_file.exists():
+                # Output folder changed to existing project - load its config
+                try:
+                    existing_config = load_config(output_folder)
+                    self.config_data.update(existing_config)
+                    self._update_ui_from_config()
+                    self.log_message(f"Loaded existing project config from: {output_folder}")
+                    
+                    # Update global settings to remember this existing project
+                    app_settings = load_app_settings()
+                    app_settings["last_project_path"] = str(get_project_config_path(output_folder))
+                    save_app_settings(app_settings)
+                except Exception as e:
+                    # If load fails, save current config (which also updates global settings)
+                    save_config(self.config_data, output_folder)
+            else:
+                # Save current config (new project or updating existing project settings)
+                save_config(self.config_data, output_folder)
+        else:
+            # If no output folder yet, just update app settings with current config
+            # This will be saved properly once output folder is selected
+            pass
+        
         self._check_play_button_state()  # Update Play button state
+    
+    def _update_ui_from_config(self):
+        """Update all UI controls to match current config_data"""
+        # Temporarily disable auto-save while updating UI
+        self._updating_ui = True
+        try:
+            self.name_var.set(self.config_data.get("project_name", "Untitled"))
+            self.input_var.set(self.config_data.get("input_folder", ""))
+            self.output_var.set(self.config_data.get("output_folder", ""))
+            self.soundtrack_var.set(self.config_data.get("soundtrack", ""))
+            self.photo_dur_var.set(self.config_data.get("photo_duration", 3))
+            self.video_dur_var.set(self.config_data.get("video_duration", 10))
+            self.transition_var.set(self.config_data.get("transition_type", "fade"))
+            self.trans_dur_var.set(self.config_data.get("transition_duration", 1))
+            self.multislide_freq_var.set(self.config_data.get("multislide_frequency", 10))
+        finally:
+            self._updating_ui = False
 
     def open_settings(self):
         """Open the comprehensive settings dialog"""
