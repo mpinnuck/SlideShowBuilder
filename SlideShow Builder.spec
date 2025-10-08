@@ -1,6 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Multi-file (onedir) build - Instant startup (RECOMMENDED)
-# For single-file build (40 second startup), see "SlideShow Builder-onefile.spec"
+# Multi-file (onedir) build - Faster startup, larger app bundle
 
 
 a = Analysis(
@@ -31,7 +30,7 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch=None,
+    target_arch='arm64',
     codesign_identity=None,
     entitlements_file=None,
     icon=['icon.icns'],
