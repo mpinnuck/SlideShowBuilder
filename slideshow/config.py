@@ -32,6 +32,9 @@ DEFAULT_CONFIG = {
     # Multislide settings
     "multislide_frequency": 5,  # Create composite slide after N slides (photos + videos, 0 = disabled)
     
+    # Video quality settings
+    "video_quality": "maximum",  # Encoding quality: "maximum", "high", "medium", "fast"
+    
     # Intro title settings
     "intro_title": {
         "enabled": False,
@@ -56,6 +59,104 @@ DEFAULT_CONFIG = {
     "auto_cleanup": True,
     "keep_intermediate_frames": False
 }
+
+# ============================================================================
+# FFmpeg Encoding Quality Presets
+# ============================================================================
+# Centralized video encoding parameters for consistent quality across all
+# FFmpeg operations (final assembly, transitions, multi-slides, etc.)
+#
+# Quality Levels:
+#   "maximum"  - Visually lossless, large file size, slow encoding (~18-25 Mbps)
+#   "high"     - Excellent quality, good compression, balanced speed (~12-18 Mbps)
+#   "medium"   - Good quality, smaller files, faster encoding (~8-12 Mbps)
+#   "fast"     - Acceptable quality, small files, very fast (~5-8 Mbps)
+#
+# To change quality globally: Update FFMPEG_QUALITY_PRESET
+# ============================================================================
+
+FFMPEG_QUALITY_PRESET = "maximum"  # Change this to adjust all encoding quality
+
+FFMPEG_ENCODING_PRESETS = {
+    "maximum": {
+        # Visually lossless quality - best for archival and USB playback
+        "crf": "18",              # Lower = better quality (18 = near lossless)
+        "preset": "slow",         # Encoding speed: slower = better compression
+        "profile": "high",        # H.264 profile (high = most features)
+        "level": "4.1",          # H.264 level (4.1 = supports higher bitrates)
+        "description": "Maximum quality - visually lossless, ~18-25 Mbps"
+    },
+    "high": {
+        # Excellent quality with good compression - recommended for most uses
+        "crf": "20",
+        "preset": "medium",
+        "profile": "high",
+        "level": "4.1",
+        "description": "High quality - excellent balance, ~12-18 Mbps"
+    },
+    "medium": {
+        # Good quality with smaller file size - good for streaming
+        "crf": "23",
+        "preset": "medium",
+        "profile": "main",
+        "level": "4.0",
+        "description": "Medium quality - good compression, ~8-12 Mbps"
+    },
+    "fast": {
+        # Acceptable quality, fast encoding - for testing/preview
+        "crf": "25",
+        "preset": "fast",
+        "profile": "main",
+        "level": "4.0",
+        "description": "Fast encoding - smaller files, ~5-8 Mbps"
+    }
+}
+
+def get_ffmpeg_encoding_params(quality_preset: str = None, config: dict = None) -> list:
+    """
+    Get FFmpeg encoding parameters for the specified quality preset.
+    
+    Args:
+        quality_preset: Quality level ("maximum", "high", "medium", "fast")
+                       If None, uses config["video_quality"] or FFMPEG_QUALITY_PRESET
+        config: Project configuration dictionary (optional)
+    
+    Returns:
+        List of FFmpeg command-line arguments for video encoding
+        
+    Example:
+        cmd = [FFmpegPaths.ffmpeg(), "-i", input_file]
+        cmd.extend(get_ffmpeg_encoding_params(config=self.config))
+        cmd.extend(["-pix_fmt", "yuv420p", output_file])
+    """
+    # Determine which preset to use
+    if quality_preset:
+        preset_name = quality_preset
+    elif config and "video_quality" in config:
+        preset_name = config["video_quality"]
+    else:
+        preset_name = FFMPEG_QUALITY_PRESET
+    
+    if preset_name not in FFMPEG_ENCODING_PRESETS:
+        raise ValueError(f"Unknown quality preset: {preset_name}. "
+                        f"Valid options: {list(FFMPEG_ENCODING_PRESETS.keys())}")
+    
+    preset = FFMPEG_ENCODING_PRESETS[preset_name]
+    
+    return [
+        "-c:v", "libx264",
+        "-preset", preset["preset"],
+        "-crf", preset["crf"],
+        "-profile:v", preset["profile"],
+        "-level", preset["level"],
+    ]
+
+def get_quality_description(quality_preset: str = None) -> str:
+    """Get human-readable description of the current quality preset."""
+    preset_name = quality_preset or FFMPEG_QUALITY_PRESET
+    if preset_name in FFMPEG_ENCODING_PRESETS:
+        return FFMPEG_ENCODING_PRESETS[preset_name]["description"]
+    return "Unknown quality preset"
 
 # Project config file name (stored in output folder)
 PROJECT_CONFIG_FILE = "slideshow_config.json"

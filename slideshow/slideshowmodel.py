@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+from slideshow.config import get_ffmpeg_encoding_params
 from slideshow.slides.photo_slide import PhotoSlide
 from slideshow.slides.video_slide import VideoSlide
 from slideshow.transitions import get_transition
@@ -169,7 +170,8 @@ class Slideshow:
                     media_files=media_files,
                     duration=self.config["photo_duration"],
                     resolution=resolution,
-                    fps=fps
+                    fps=fps,
+                    config=self.config
                 )
                 self.slides.append(multi_slide)
                 
@@ -387,16 +389,14 @@ class Slideshow:
             cmd_pass1 = [
                 FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
-                "-c:v", "libx264", 
-                "-preset", "fast",
-                "-profile:v", "high",      # H.264 High Profile for better compatibility
-                "-level", "4.0",           # H.264 Level 4.0 (widely compatible)
-                "-g", "90",                # Keyframe every 3 seconds (30fps * 3)
-                "-bf", "2",                # 2 B-frames for better compression
-                "-movflags", "+faststart", 
+            ]
+            cmd_pass1.extend(get_ffmpeg_encoding_params(config=self.config))  # Use project quality settings
+            cmd_pass1.extend([
+                "-pix_fmt", "yuv420p",     # Standard pixel format for compatibility
+                "-movflags", "+faststart", # Fast start for better playback
                 "-progress", "pipe:1",
                 str(self.video_only),
-            ]
+            ])
             self._run_ffmpeg_progress(cmd_pass1,
                                     expected_duration or 1.0,
                                     base_offset=processing_weight,

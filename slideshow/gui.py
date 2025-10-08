@@ -223,6 +223,14 @@ class GUI(tk.Tk):
         self.trans_dur_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.trans_dur_var, width=5).grid(row=6, column=1, sticky="w", padx=(5, 0))
 
+        # Video Quality (positioned right after Transition Duration in same column area as MultiSlide Freq)
+        ttk.Label(self, text="Video Quality:").grid(row=6, column=1, sticky="w", padx=(80, 5))
+        self.video_quality_var = tk.StringVar(value=self.config_data.get("video_quality", "maximum"))
+        self.video_quality_var.trace_add('write', lambda *args: self._on_video_quality_change())
+        quality_combo = ttk.Combobox(self, textvariable=self.video_quality_var, width=10, state="readonly")
+        quality_combo['values'] = ('maximum', 'high', 'medium', 'fast')
+        quality_combo.grid(row=6, column=1, sticky="w", padx=(190, 0))
+
         # Buttons
         self.button_frame = ttk.Frame(self)
         self.button_frame.grid(row=7, column=0, columnspan=4, sticky="w", pady=5)
@@ -508,6 +516,7 @@ class GUI(tk.Tk):
             self.photo_dur_var.set(config.get("photo_duration", 3))
             self.video_dur_var.set(config.get("video_duration", 10))
             self.multislide_freq_var.set(config.get("multislide_frequency", 10))
+            self.video_quality_var.set(config.get("video_quality", "maximum"))
             self.trans_dur_var.set(config.get("transition_duration", 1))
             
             # Update transition dropdown
@@ -605,6 +614,7 @@ class GUI(tk.Tk):
             self.photo_dur_var.set(config.get("photo_duration", 3))
             self.video_dur_var.set(config.get("video_duration", 10))
             self.multislide_freq_var.set(config.get("multislide_frequency", 10))
+            self.video_quality_var.set(config.get("video_quality", "maximum"))
             self.trans_dur_var.set(config.get("transition_duration", 1))
             
             # Update transition dropdown
@@ -735,7 +745,30 @@ class GUI(tk.Tk):
             self.config_data.get("multislide_frequency", 10)
         )
         
+        config["video_quality"] = self.video_quality_var.get()
+        
         return config
+    
+    def _on_video_quality_change(self):
+        """Handle video quality changes - clear cache and save config"""
+        # Skip if we're updating UI from loaded config
+        if getattr(self, '_updating_ui', False):
+            return
+        
+        # Get old and new quality settings
+        old_quality = self.config_data.get("video_quality", "maximum")
+        new_quality = self.video_quality_var.get()
+        
+        # If quality changed, clear the FFmpeg cache
+        if old_quality != new_quality:
+            try:
+                FFmpegCache.clear_cache()
+                self.log_message(f"[FFmpegCache] Cache cleared due to video quality change: {old_quality} → {new_quality}")
+            except Exception as e:
+                self.log_message(f"[FFmpegCache] Warning: Failed to clear cache: {e}")
+        
+        # Now save the config
+        self._auto_save_config()
     
     def _auto_save_config(self):
         """Automatically update and save config when controls change"""
@@ -1880,9 +1913,12 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
                 FFmpegCache.clear_cache()
-                # No confirmation - user already pressed OK
+                if hasattr(self, 'parent') and hasattr(self.parent, 'log_message'):
+                    self.parent.log_message("[FFmpegCache] Cache cleared successfully")
             except Exception as e:
                 wide_messagebox("error", "Error", f"Failed to clear cache:\n{str(e)}")
+                if hasattr(self, 'parent') and hasattr(self.parent, 'log_message'):
+                    self.parent.log_message(f"[FFmpegCache] Error clearing cache: {e}")
     
     def _cleanup_cache(self):
         """Clean up old cache entries"""

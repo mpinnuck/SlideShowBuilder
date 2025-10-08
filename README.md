@@ -20,10 +20,18 @@ A professional Python-based macOS application for creating stunning video slides
 - **Professional Soundtrack Integration**: 
   - Background music with automatic looping and fade effects
   - 1-second audio fade out at video end
+- **Configurable Video Quality**: User-selectable encoding presets
+  - **Maximum**: Visually lossless quality (CRF 18, ~18-25 Mbps) - best for archival
+  - **High**: Excellent quality (CRF 20, ~12-18 Mbps) - recommended for most users
+  - **Medium**: Good quality (CRF 23, ~8-12 Mbps) - balanced size/quality
+  - **Fast**: Quick encoding (CRF 25, ~5-8 Mbps) - faster exports
+  - Automatic cache clearing when quality changes
+  - Per-project quality settings saved automatically
 - **Intelligent Caching**: FFmpeg output cache for faster re-renders
   - Automatic cache management with hit/miss statistics
   - Browse and inspect cached clips and frames
   - Configurable cache directory and cleanup options
+  - Smart cache invalidation on quality or input folder changes
 
 ### User Interface
 - **Modern Settings Dialog**: Comprehensive tabbed interface for:
@@ -148,6 +156,9 @@ python slideshowbuilder.py
    - **Photo Duration**: How long each photo displays (seconds)
    - **Video Duration**: Maximum video clip length (or -1 for full length)
    - **Transition Duration**: Time for transition effects (seconds)
+   - **Video Quality**: Select encoding quality (maximum, high, medium, fast)
+     - Higher quality = larger file size and longer export time
+     - Changing quality automatically clears cache for fresh rendering
 
 2. **Advanced Settings** (click Settings button):
    
@@ -166,7 +177,7 @@ python slideshowbuilder.py
    - 3D rotation settings
    
    **Advanced Tab:**
-   - Video quality (resolution, FPS)
+   - Video output settings (resolution, FPS)
    - Hardware acceleration (experimental)
    - FFmpeg cache settings:
      - Enable/disable caching
@@ -174,6 +185,8 @@ python slideshowbuilder.py
      - View cache statistics
      - Browse cached files
      - Clear cache or cleanup old entries
+   
+   **Note**: The main Video Quality setting (maximum/high/medium/fast) is in the main window for quick access, while Advanced settings contain technical video output parameters.
 
 3. **Multi-Image Layouts:**
    - Set "Multi-Slide Frequency" (e.g., 5 = after every 5 photo slides, create 3-photo composite)
@@ -378,6 +391,51 @@ The `FFmpegCache` singleton (in `slideshow/transitions/ffmpeg_cache.py`) provide
 - **Statistics Tracking**: Hit/miss counters, total size calculations
 - **Browse Support**: Open cache directory in Finder for inspection
 - **Clear Function**: One-click cache cleanup from Settings dialog
+- **Smart Invalidation**: Automatic cache clearing when:
+  - Input folder changes (different source media)
+  - Video quality setting changes (encoding parameters changed)
+
+### Video Quality System
+
+Centralized video encoding configuration with user-selectable quality presets (in `slideshow/config.py`):
+
+**Quality Presets** (`FFMPEG_ENCODING_PRESETS`):
+```python
+{
+    "maximum": {
+        "crf": "18", "preset": "slow", "profile": "high", "level": "4.1",
+        "description": "Visually lossless (~18-25 Mbps)"
+    },
+    "high": {
+        "crf": "20", "preset": "medium", "profile": "high", "level": "4.1",
+        "description": "Excellent quality (~12-18 Mbps) - Recommended"
+    },
+    "medium": {
+        "crf": "23", "preset": "medium", "profile": "main", "level": "4.0",
+        "description": "Good quality (~8-12 Mbps)"
+    },
+    "fast": {
+        "crf": "25", "preset": "fast", "profile": "main", "level": "4.0",
+        "description": "Quick encoding (~5-8 Mbps)"
+    }
+}
+```
+
+**Key Function**:
+- `get_ffmpeg_encoding_params(config=None)`: Returns FFmpeg encoding arguments based on `config["video_quality"]`
+
+**Integration**:
+- All encoding operations (slides, transitions, final assembly) call this function
+- Config parameter threaded through all slide/transition classes
+- GUI dropdown allows instant quality switching
+- Cache automatically cleared when quality changes to prevent stale renders
+- Per-project quality setting saved in `slideshow_config.json`
+
+**User Benefits**:
+- **No hardcoded quality**: Single source of truth for all encoding
+- **Easy experimentation**: Try different qualities without code changes
+- **Predictable file sizes**: Clear bitrate expectations for each preset
+- **Performance control**: Trade quality for faster exports when needed
 
 ### Key Design Patterns
 

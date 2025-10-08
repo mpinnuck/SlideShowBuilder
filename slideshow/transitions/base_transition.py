@@ -13,8 +13,9 @@ from .ffmpeg_paths import FFmpegPaths
 class BaseTransition(ABC):
     """Base class for all slideshow transitions (SlideItem-based)."""
 
-    def __init__(self, duration: float = 1.0):
+    def __init__(self, duration: float = 1.0, config: dict = None):
         self.duration = duration
+        self.config = config
         self.name = self.__class__.__name__
         self.description = "Abstract base transition class"
 

@@ -261,6 +261,8 @@ class FFmpegCache:
             cls._metadata = {"version": "1.0", "entries": {}, "stats": {"hits": 0, "misses": 0}}
             cls._initialized = False
             cls.configure(cls._cache_dir)
+            # Force save the empty metadata to disk
+            cls._save_metadata()
     
     @classmethod
     def get_cache_entries_with_sources(cls) -> Dict[str, Any]:

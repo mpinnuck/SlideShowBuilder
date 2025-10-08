@@ -13,6 +13,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import math
+from slideshow.config import get_ffmpeg_encoding_params
 import os
 import slideshow.config  
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
@@ -23,6 +24,7 @@ class IntroTitle:
     def __init__(self):
         """Initialize intro title from global config."""
         cfg = slideshow.config.load_config()
+        self.config = cfg  # Store full config for encoding quality settings
         self.settings = cfg.get("intro_title", {})
         self.enabled = self.settings.get("enabled", False)
         self.text = self.settings.get("text", "")
@@ -103,9 +105,12 @@ class IntroTitle:
             FFmpegPaths.ffmpeg(), "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
             "-s", f"{self.resolution[0]}x{self.resolution[1]}",
             "-pix_fmt", "rgba", "-r", str(self.fps), "-i", "-",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
-            str(output_path)
         ]
+        cmd.extend(get_ffmpeg_encoding_params(config=self.config))  # Use project quality settings
+        cmd.extend([
+            "-pix_fmt", "yuv420p",
+            str(output_path)
+        ])
         
         # Start FFmpeg process
         ffmpeg_process = subprocess.Popen(cmd, stdin=subprocess.PIPE, 

@@ -41,11 +41,12 @@ class TransitionFactory:
             }
 
         TRANSITIONS = {
-            "fade": lambda: FadeTransition(duration=duration),
+            "fade": lambda: FadeTransition(duration=duration, config=config),
             "origami": lambda: OrigamiTransition(
                 duration=duration, 
                 resolution=resolution, 
                 fps=fps,
+                config=config,
                 **origami_kwargs
             ),
         }

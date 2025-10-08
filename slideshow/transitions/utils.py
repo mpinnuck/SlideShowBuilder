@@ -4,6 +4,7 @@ import subprocess, tempfile, os
 from pathlib import Path
 from PIL import Image
 import numpy as np
+from slideshow.config import get_ffmpeg_encoding_params
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
@@ -109,7 +110,7 @@ def load_and_resize_image(image_or_path, target_size=(1920, 1080)):
     canvas.paste(resized, (x_offset, y_offset))
     return canvas
 
-def save_frames_as_video(frames, output_path, fps=25):
+def save_frames_as_video(frames, output_path, fps=25, config=None):
     """Save a list of numpy RGB frames as an MP4 video using ffmpeg."""
     from PIL import Image
     with tempfile.TemporaryDirectory() as tmp:
@@ -119,6 +120,10 @@ def save_frames_as_video(frames, output_path, fps=25):
             FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
             "-r", str(fps),
             "-i", f"{tmp}/frame_%06d.png",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", str(output_path)
         ]
+        cmd.extend(get_ffmpeg_encoding_params(config=config))  # Use project quality settings
+        cmd.extend([
+            "-pix_fmt", "yuv420p", 
+            str(output_path)
+        ])
         subprocess.run(cmd, check=True, capture_output=True)  # Suppress verbose output

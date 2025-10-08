@@ -1,6 +1,7 @@
 # slideshow/transitions/fade_transition.py
 from pathlib import Path
 import subprocess
+from slideshow.config import get_ffmpeg_encoding_params
 from .base_transition import BaseTransition
 from .ffmpeg_paths import FFmpegPaths
 from .ffmpeg_cache import FFmpegCache
@@ -10,8 +11,8 @@ from .ffmpeg_cache import FFmpegCache
 class FadeTransition(BaseTransition):
     """Simple crossfade transition using FFmpeg."""
 
-    def __init__(self, duration: float = 1.0):
-        super().__init__(duration)
+    def __init__(self, duration: float = 1.0, config: dict = None):
+        super().__init__(duration, config)
         self.name = "Fade"
         self.description = "Simple crossfade between slides"
 
@@ -69,9 +70,13 @@ class FadeTransition(BaseTransition):
             "-filter_complex",
             f"[0:v][1:v]xfade=transition=fade:duration={self.duration}:offset=0",
             "-r", "30",  # could use from_slide.fps if slides share same fps
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-            "-t", f"{self.duration:.3f}", str(output_path)
         ]
+        cmd.extend(get_ffmpeg_encoding_params(config=self.config))  # Use project quality settings
+        cmd.extend([
+            "-pix_fmt", "yuv420p", 
+            "-movflags", "+faststart",
+            "-t", f"{self.duration:.3f}", str(output_path)
+        ])
 
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode != 0:
