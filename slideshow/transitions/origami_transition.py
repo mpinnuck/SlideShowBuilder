@@ -21,7 +21,7 @@ from slideshow.transitions.origami_fold_multi_lr import OrigamiFoldMultiLRLeft, 
 
 
 class OrigamiTransition(BaseTransition):
-    def __init__(self, duration=1.0, resolution=(1920, 1080), fps=30, fold=None, easing="quad", lighting=True, project_name=None, config=None):
+    def __init__(self, duration=1.0, resolution=(1920, 1080), fps=30, fold=None, easing="quad", lighting=True, project_name=None):
         """
         Args:
             duration (float): Duration of the transition in seconds.
@@ -35,9 +35,8 @@ class OrigamiTransition(BaseTransition):
             lighting (bool): Enable realistic directional lighting for depth and dimension.
                             Default True provides paper-like shading effects.
             project_name (str): Project name to include in deterministic transition selection.
-            config (dict): Project configuration dictionary (optional, for quality settings)
         """
-        super().__init__(duration=duration, config=config)
+        super().__init__(duration=duration)
         self.name = "Origami"
         self.description = "3D paper folding transition with multiple variations: basic (left/right/up/down), center (horiz/vert), slide, multi-quarter progressive folds, and multi-slide preview"
         self.resolution = resolution

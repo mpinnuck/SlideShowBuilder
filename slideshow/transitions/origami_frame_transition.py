@@ -17,8 +17,8 @@ class OrigamiFrameTransition(BaseTransition, ABC):
     Subclasses must implement phase1 and phase2 rendering.
     """
 
-    def __init__(self, duration=1.0, resolution=(1920, 1080), fps=25, config=None):
-        super().__init__(duration, config)
+    def __init__(self, duration=1.0, resolution=(1920, 1080), fps=25):
+        super().__init__(duration)
         self.resolution = resolution
         self.fps = fps
 
@@ -74,6 +74,6 @@ class OrigamiFrameTransition(BaseTransition, ABC):
         to_img = to_slide.get_to_image()
 
         frames = self.render_frames(from_img, to_img)
-        save_frames_as_video(frames, output_path, fps=self.fps, config=self.config)
+        save_frames_as_video(frames, output_path, fps=self.fps)
 
         return 1  # Most origami transitions consume 1 slide

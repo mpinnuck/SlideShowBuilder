@@ -1,7 +1,7 @@
 # slideshow/transitions/fade_transition.py
 from pathlib import Path
 import subprocess
-from slideshow.config import get_ffmpeg_encoding_params
+from slideshow.config import Config
 from .base_transition import BaseTransition
 from .ffmpeg_paths import FFmpegPaths
 from .ffmpeg_cache import FFmpegCache
@@ -11,8 +11,8 @@ from .ffmpeg_cache import FFmpegCache
 class FadeTransition(BaseTransition):
     """Simple crossfade transition using FFmpeg."""
 
-    def __init__(self, duration: float = 1.0, config: dict = None):
-        super().__init__(duration, config)
+    def __init__(self, duration: float = 1.0):
+        super().__init__(duration)
         self.name = "Fade"
         self.description = "Simple crossfade between slides"
 
@@ -71,7 +71,7 @@ class FadeTransition(BaseTransition):
             f"[0:v][1:v]xfade=transition=fade:duration={self.duration}:offset=0",
             "-r", "30",  # could use from_slide.fps if slides share same fps
         ]
-        cmd.extend(get_ffmpeg_encoding_params(config=self.config))  # Use project quality settings
+        cmd.extend(Config.instance().get_ffmpeg_encoding_params())  # Use project quality settings
         cmd.extend([
             "-pix_fmt", "yuv420p", 
             "-movflags", "+faststart",
