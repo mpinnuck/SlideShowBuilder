@@ -387,8 +387,14 @@ class Slideshow:
             cmd_pass1 = [
                 FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
-                "-c:v", "libx264", "-preset", "fast",
-                "-movflags", "+faststart", "-progress", "pipe:1",
+                "-c:v", "libx264", 
+                "-preset", "fast",
+                "-profile:v", "high",      # H.264 High Profile for better compatibility
+                "-level", "4.0",           # H.264 Level 4.0 (widely compatible)
+                "-g", "90",                # Keyframe every 3 seconds (30fps * 3)
+                "-bf", "2",                # 2 B-frames for better compression
+                "-movflags", "+faststart", 
+                "-progress", "pipe:1",
                 str(self.video_only),
             ]
             self._run_ffmpeg_progress(cmd_pass1,

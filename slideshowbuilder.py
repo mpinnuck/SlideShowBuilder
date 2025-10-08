@@ -11,7 +11,7 @@ import sys
 import subprocess
 from slideshow.gui import GUI
 
-VERSION = "8.5.0"
+VERSION = "8.5.1"
 
 if __name__ == "__main__":
     # Bring app to foreground on macOS (fail silently if error)
