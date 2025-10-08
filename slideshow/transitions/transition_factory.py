@@ -1,6 +1,6 @@
 # slideshow/transitions/transition_factory.py
 import random
-from slideshow.config import Config, DEFAULT_CONFIG
+from slideshow.config import cfg, DEFAULT_CONFIG
 
 class TransitionFactory:
     """
@@ -29,7 +29,7 @@ class TransitionFactory:
         from slideshow.transitions.origami_transition import OrigamiTransition
 
         # Extract origami-specific settings from config
-        config = Config.instance().get_all()
+        config = cfg.get_all()
         origami_kwargs = {
             'easing': config.get('origami_easing', 'quad'),
             'lighting': config.get('origami_lighting', True),

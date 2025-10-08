@@ -257,12 +257,31 @@ class FFmpegCache:
     def clear_cache(cls):
         """Clear all cached files and metadata."""
         if cls._cache_dir and cls._cache_dir.exists():
-            shutil.rmtree(cls._cache_dir)
-            cls._metadata = {"version": "1.0", "entries": {}, "stats": {"hits": 0, "misses": 0}}
-            cls._initialized = False
-            cls.configure(cls._cache_dir)
-            # Force save the empty metadata to disk
-            cls._save_metadata()
+            try:
+                # Get stats before clearing
+                entries_before = len(cls._metadata.get("entries", {}))
+                
+                # Delete the entire cache directory
+                shutil.rmtree(cls._cache_dir)
+                
+                # Reset metadata
+                cls._metadata = {"version": "1.0", "entries": {}, "stats": {"hits": 0, "misses": 0}}
+                cls._initialized = False
+                
+                # Recreate the empty cache directory structure
+                cls.configure(cls._cache_dir)
+                
+                # Force save the empty metadata to disk
+                cls._save_metadata()
+                
+                print(f"[FFmpegCache] Successfully cleared {entries_before} cache entries from {cls._cache_dir}")
+                
+            except Exception as e:
+                print(f"[FFmpegCache] Error clearing cache: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"[FFmpegCache] Cache directory not configured or doesn't exist: {cls._cache_dir}")
     
     @classmethod
     def get_cache_entries_with_sources(cls) -> Dict[str, Any]:

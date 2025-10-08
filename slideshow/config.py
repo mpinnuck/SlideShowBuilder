@@ -385,3 +385,11 @@ def save_config(config: dict, output_folder: str):
     """Backward compatibility wrapper. New code should use Config.instance().save()"""
     Config.instance().set(config)
     Config.instance().save(output_folder)
+
+
+# ============================================================================
+# Module-level convenience: Shorthand for Config.instance()
+# ============================================================================
+# Usage: from slideshow.config import cfg
+#        params = cfg.get_ffmpeg_encoding_params()
+cfg = Config.instance()

@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess
-from slideshow.config import DEFAULT_CONFIG
+from slideshow.config import cfg, DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
@@ -25,7 +25,8 @@ class VideoSlide(SlideItem):
             "duration": self.duration,
             "fps": self.fps,
             "resolution": self.resolution,
-            "format": "mp4"
+            "format": "mp4",
+            "video_quality": cfg.get('video_quality', 'maximum')  # Include quality in cache key
         }
         
         # Check cache first

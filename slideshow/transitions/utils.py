@@ -4,7 +4,7 @@ import subprocess, tempfile, os
 from pathlib import Path
 from PIL import Image
 import numpy as np
-from slideshow.config import Config
+from slideshow.config import cfg
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
@@ -121,7 +121,7 @@ def save_frames_as_video(frames, output_path, fps=25):
             "-r", str(fps),
             "-i", f"{tmp}/frame_%06d.png",
         ]
-        cmd.extend(Config.instance().get_ffmpeg_encoding_params())  # Use project quality settings
+        cmd.extend(cfg.get_ffmpeg_encoding_params())  # Use project quality settings
         cmd.extend([
             "-pix_fmt", "yuv420p", 
             str(output_path)

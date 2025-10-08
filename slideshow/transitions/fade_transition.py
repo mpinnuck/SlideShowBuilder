@@ -1,7 +1,7 @@
 # slideshow/transitions/fade_transition.py
 from pathlib import Path
 import subprocess
-from slideshow.config import Config
+from slideshow.config import cfg
 from .base_transition import BaseTransition
 from .ffmpeg_paths import FFmpegPaths
 from .ffmpeg_cache import FFmpegCache
@@ -41,7 +41,8 @@ class FadeTransition(BaseTransition):
             "to_slide": str(to_clip.absolute()),
             "from_mtime": from_clip.stat().st_mtime if from_clip.exists() else 0,
             "to_mtime": to_clip.stat().st_mtime if to_clip.exists() else 0,
-            "fps": 30  # Fixed for transitions
+            "fps": 30,  # Fixed for transitions
+            "video_quality": cfg.get('video_quality', 'maximum')  # Include quality in cache key
         }
         
         # Check cache first
@@ -71,7 +72,7 @@ class FadeTransition(BaseTransition):
             f"[0:v][1:v]xfade=transition=fade:duration={self.duration}:offset=0",
             "-r", "30",  # could use from_slide.fps if slides share same fps
         ]
-        cmd.extend(Config.instance().get_ffmpeg_encoding_params())  # Use project quality settings
+        cmd.extend(cfg.get_ffmpeg_encoding_params())  # Use project quality settings
         cmd.extend([
             "-pix_fmt", "yuv420p", 
             "-movflags", "+faststart",

@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from slideshow.config import Config
+from slideshow.config import cfg
 from slideshow.slides.photo_slide import PhotoSlide
 from slideshow.slides.video_slide import VideoSlide
 from slideshow.transitions import get_transition
@@ -21,7 +21,7 @@ from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 class Slideshow:
     def __init__(self, config: dict, log_callback=None, progress_callback=None):
         # Initialize the Config singleton with the provided config
-        Config.instance().update(config)
+        cfg.update(config)
         self.config = config  # Keep for backward compatibility
         self.log_callback = log_callback
         self.progress_callback = progress_callback
@@ -390,7 +390,7 @@ class Slideshow:
                 FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
             ]
-            cmd_pass1.extend(Config.instance().get_ffmpeg_encoding_params())  # Use project quality settings
+            cmd_pass1.extend(cfg.get_ffmpeg_encoding_params())  # Use project quality settings
             cmd_pass1.extend([
                 "-pix_fmt", "yuv420p",     # Standard pixel format for compatibility
                 "-movflags", "+faststart", # Fast start for better playback

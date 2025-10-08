@@ -755,19 +755,40 @@ class GUI(tk.Tk):
         if getattr(self, '_updating_ui', False):
             return
         
-        # Get old and new quality settings
-        old_quality = self.config_data.get("video_quality", "maximum")
+        # Get current quality from GUI (new value)
         new_quality = self.video_quality_var.get()
         
-        # If quality changed, clear the FFmpeg cache
+        # Get old quality from config_data (before save)
+        old_quality = self.config_data.get("video_quality", "maximum")
+        
+        self.log_message(f"[Debug] Quality change detected: {old_quality} → {new_quality}")
+        
+        # Check if quality actually changed
         if old_quality != new_quality:
+            # Get cache stats before clearing
+            try:
+                cache_stats_before = FFmpegCache.get_cache_stats()
+                entries_before = cache_stats_before.get("total_entries", 0)
+                self.log_message(f"[Debug] Cache before clear: {entries_before} entries")
+            except:
+                pass
+            
+            # Clear cache BEFORE saving config
             try:
                 FFmpegCache.clear_cache()
                 self.log_message(f"[FFmpegCache] Cache cleared due to video quality change: {old_quality} → {new_quality}")
+                
+                # Verify cache was actually cleared
+                cache_stats_after = FFmpegCache.get_cache_stats()
+                entries_after = cache_stats_after.get("total_entries", 0)
+                self.log_message(f"[Debug] Cache after clear: {entries_after} entries")
+                
             except Exception as e:
                 self.log_message(f"[FFmpegCache] Warning: Failed to clear cache: {e}")
+        else:
+            self.log_message(f"[Debug] Quality unchanged: {new_quality}")
         
-        # Now save the config
+        # Now save the config (this will update self.config_data)
         self._auto_save_config()
     
     def _auto_save_config(self):

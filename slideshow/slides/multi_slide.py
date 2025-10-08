@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 import tempfile
 import subprocess
-from slideshow.config import Config
+from slideshow.config import cfg
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
@@ -339,7 +339,8 @@ class MultiSlide(SlideItem):
             "resolution": self.resolution,
             "format": "mp4",
             "media_files": media_file_info,  # Include all constituent files
-            "slide_count": self.slide_count
+            "slide_count": self.slide_count,
+            "video_quality": cfg.get('video_quality', 'maximum')  # Include quality in cache key
         }
         
         # Check cache first
@@ -398,7 +399,7 @@ class MultiSlide(SlideItem):
             "-framerate", str(self.fps),
             "-i", "pipe:0",
         ]
-        cmd.extend(Config.instance().get_ffmpeg_encoding_params())  # Use project quality settings
+        cmd.extend(cfg.get_ffmpeg_encoding_params())  # Use project quality settings
         cmd.extend([
             "-pix_fmt", "yuv420p",
             str(output_path)

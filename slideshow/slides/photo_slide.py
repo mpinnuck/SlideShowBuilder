@@ -1,7 +1,7 @@
 from pathlib import Path
 import cv2
 from PIL import Image
-from slideshow.config import DEFAULT_CONFIG
+from slideshow.config import cfg, DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.utils import load_and_resize_image
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
@@ -26,7 +26,8 @@ class PhotoSlide(SlideItem):
             "duration": self.duration,
             "fps": self.fps,
             "resolution": self.resolution,
-            "format": "mp4"
+            "format": "mp4",
+            "video_quality": cfg.get('video_quality', 'maximum')  # Include quality in cache key
         }
         
         # Check cache first

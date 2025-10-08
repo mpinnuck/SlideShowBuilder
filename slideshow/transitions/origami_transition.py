@@ -10,6 +10,7 @@ and delegates rendering to the chosen sub-transition.
 
 import hashlib
 from pathlib import Path
+from slideshow.config import cfg
 from slideshow.transitions.base_transition import BaseTransition
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.origami_fold_left_right import OrigamiFoldLeft, OrigamiFoldRight
@@ -17,7 +18,6 @@ from slideshow.transitions.origami_fold_up_down import OrigamiFoldUp, OrigamiFol
 from slideshow.transitions.origami_fold_center import OrigamiFoldCenterHoriz, OrigamiFoldCenterVert
 from slideshow.transitions.origami_fold_slide import OrigamiFoldSlideLeft, OrigamiFoldSlideRight
 from slideshow.transitions.origami_fold_multi_lr import OrigamiFoldMultiLRLeft, OrigamiFoldMultiLRRight
-
 
 
 class OrigamiTransition(BaseTransition):
@@ -101,7 +101,8 @@ class OrigamiTransition(BaseTransition):
             'fps': self.fps,
             'easing': self.easing,
             'lighting': self.lighting,
-            'fold': self.fold or 'auto'  # Include the selected fold type
+            'fold': self.fold or 'auto',  # Include the selected fold type
+            'video_quality': cfg.get('video_quality', 'maximum')  # Include quality in cache key
         }
 
     def render(self, index: int, slides: list, output_path: Path) -> int:

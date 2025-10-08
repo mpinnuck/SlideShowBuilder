@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import math
-from slideshow.config import Config
+from slideshow.config import cfg
 import os
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
@@ -22,8 +22,8 @@ from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 class IntroTitle:
     def __init__(self):
         """Initialize intro title from global config."""
-        cfg = Config.instance().get_all()
-        self.settings = cfg.get("intro_title", {})
+        config = cfg.get_all()
+        self.settings = config.get("intro_title", {})
         self.enabled = self.settings.get("enabled", False)
         self.text = self.settings.get("text", "")
         self.duration = self.settings.get("duration", 5.0)
@@ -36,8 +36,8 @@ class IntroTitle:
         self.shadow_offset = tuple(self.settings.get("shadow_offset", [4, 4]))
         self.rotation_axis = self.settings.get("rotation", {}).get("axis", "y")
         self.clockwise = self.settings.get("rotation", {}).get("clockwise", True)
-        self.fps = cfg.get("fps", 30)
-        self.resolution = tuple(cfg.get("resolution", [1920, 1080]))
+        self.fps = config.get("fps", 30)
+        self.resolution = tuple(config.get("resolution", [1920, 1080]))
 
     def render(self, background_image: Image.Image, output_path: Path):
         """
@@ -71,7 +71,8 @@ class IntroTitle:
             "clockwise": self.clockwise,
             "fps": self.fps,
             "resolution": self.resolution,
-            "background_hash": bg_hash
+            "background_hash": bg_hash,
+            "video_quality": cfg.get('video_quality', 'maximum')  # Include quality in cache key
         }
         
         # Check cache first
@@ -104,7 +105,7 @@ class IntroTitle:
             "-s", f"{self.resolution[0]}x{self.resolution[1]}",
             "-pix_fmt", "rgba", "-r", str(self.fps), "-i", "-",
         ]
-        cmd.extend(Config.instance().get_ffmpeg_encoding_params())  # Use project quality settings
+        cmd.extend(cfg.get_ffmpeg_encoding_params())  # Use project quality settings
         cmd.extend([
             "-pix_fmt", "yuv420p",
             str(output_path)
