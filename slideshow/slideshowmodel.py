@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from slideshow.config import get_ffmpeg_encoding_params
+from slideshow.config import Config
 from slideshow.slides.photo_slide import PhotoSlide
 from slideshow.slides.video_slide import VideoSlide
 from slideshow.transitions import get_transition
@@ -20,7 +20,9 @@ from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 class Slideshow:
     def __init__(self, config: dict, log_callback=None, progress_callback=None):
-        self.config = config
+        # Initialize the Config singleton with the provided config
+        Config.instance().update(config)
+        self.config = config  # Keep for backward compatibility
         self.log_callback = log_callback
         self.progress_callback = progress_callback
         self.cancel_check = None  # Callback to check if cancellation requested
@@ -59,8 +61,7 @@ class Slideshow:
             name=self.config.get("transition_type", DEFAULT_CONFIG["transition_type"]),
             duration=float(self.config.get("transition_duration", DEFAULT_CONFIG["transition_duration"])),
             resolution=tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"])),
-            fps=int(self.config.get("fps", DEFAULT_CONFIG["fps"])),
-            config=self.config  # Pass full config for transition-specific settings
+            fps=int(self.config.get("fps", DEFAULT_CONFIG["fps"]))
         )
 
         self.load_slides()
@@ -170,8 +171,7 @@ class Slideshow:
                     media_files=media_files,
                     duration=self.config["photo_duration"],
                     resolution=resolution,
-                    fps=fps,
-                    config=self.config
+                    fps=fps
                 )
                 self.slides.append(multi_slide)
                 
@@ -390,7 +390,7 @@ class Slideshow:
                 FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
             ]
-            cmd_pass1.extend(get_ffmpeg_encoding_params(config=self.config))  # Use project quality settings
+            cmd_pass1.extend(Config.instance().get_ffmpeg_encoding_params())  # Use project quality settings
             cmd_pass1.extend([
                 "-pix_fmt", "yuv420p",     # Standard pixel format for compatibility
                 "-movflags", "+faststart", # Fast start for better playback
