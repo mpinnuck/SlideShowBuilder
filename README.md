@@ -176,7 +176,9 @@ python slideshowbuilder.py
      - Clear cache or cleanup old entries
 
 3. **Multi-Image Layouts:**
-   - Set "Multi-Slide Frequency" (e.g., 10 = every 10th slide becomes 3-photo composite)
+   - Set "Multi-Slide Frequency" (e.g., 5 = after every 5 photo slides, create 3-photo composite)
+   - Requires 3 consecutive photo files to create a multi-slide
+   - Videos don't interrupt the photo slide counter
    - Automatically creates attractive multi-image layouts
 
 4. **Image Rotation** (if needed):
@@ -257,9 +259,8 @@ SlideShowBuilder/
 ├── slideshow/                     # Core package
 │   ├── __init__.py
 │   ├── config.py                 # Two-level configuration system
-│   ├── controller.py             # MVC controller
-│   ├── gui.py                    # Tkinter GUI with settings dialog
-│   ├── slideshowmodel.py         # Core slideshow rendering logic
+│   ├── gui.py                    # Tkinter GUI (MVVM View-Model)
+│   ├── slideshowmodel.py         # Core slideshow rendering logic (MVVM Model)
 │   ├── slides/                   # Slide types
 │   │   ├── __init__.py
 │   │   ├── photo_slide.py        # Photo processing
@@ -316,17 +317,26 @@ The application follows an MVC (Model-View-Controller) architecture with a two-l
   - Multi-threaded rendering with real-time progress callbacks
   - Intelligent output caching via FFmpegCache singleton
   
-- **View** (`gui.py`): Tkinter-based user interface
-  - Main window with configuration controls
-  - Three-tab Settings dialog (Basic, Transitions, Rendering)
-  - Real-time preview of multi-image layouts
-  - Progress bars and status updates during export
-  - Focus-based updates (only saves on Tab/Enter, not every keystroke)
+## Architecture
+
+The application follows the **MVVM (Model-View-ViewModel)** pattern:
+
+- **Model** (`slideshowmodel.py`): Core business logic
+  - Slide loading and sequencing
+  - Multi-slide creation logic (after N photo slides)
+  - Video rendering pipeline with FFmpeg
+  - Cancellation support via callback
   
-- **Controller** (`controller.py`): Mediates between Model and View
-  - Event handling and validation
+- **View-Model** (`gui.py`): UI and application logic
+  - Tkinter-based user interface
+  - Main window with configuration controls
+  - Three-tab Settings dialog (Transitions, Title/Intro, Advanced)
+  - Image rotation/preview dialog with slider and delete
   - Configuration persistence via two-level JSON system
-  - FFmpegCache initialization at export start
+  - Direct instantiation of Slideshow model for rendering
+  - Progress callbacks and status updates
+  - Export cancellation handling
+  - FFmpegCache management
 
 ### Configuration System
 

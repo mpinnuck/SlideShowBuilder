@@ -15,8 +15,8 @@ DEFAULT_APP_SETTINGS = {
 # Default project-level settings
 DEFAULT_CONFIG = {
     "project_name": "MyProject",
-    "input_folder": "media/input",
-    "output_folder": "media/output/MyProject",  # Default includes project name
+    "input_folder": str(Path.home() / "SlideshowBuilder" / "MyProject" / "Slides"),
+    "output_folder": str(Path.home() / "SlideshowBuilder" / "MyProject" / "Output"),
     "photo_duration": 3.0,
     "video_duration": 5.0,
     "transition_duration": 1.0,
@@ -30,12 +30,12 @@ DEFAULT_CONFIG = {
     "origami_fold": "",  # Empty means random
     
     # Multislide settings
-    "multislide_frequency": 10,  # Create composite slide every N slides (0 = disabled)
+    "multislide_frequency": 5,  # Create composite slide after N slides (photos + videos, 0 = disabled)
     
     # Intro title settings
     "intro_title": {
         "enabled": False,
-        "text": "",
+        "text": "Project Title\nHere",
         "duration": 5.0,
         "font_path": "/System/Library/Fonts/Arial.ttf",  # User-configurable font path
         "font_size": 120,

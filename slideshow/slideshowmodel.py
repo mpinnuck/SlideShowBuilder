@@ -22,6 +22,7 @@ class Slideshow:
         self.config = config
         self.log_callback = log_callback
         self.progress_callback = progress_callback
+        self.cancel_check = None  # Callback to check if cancellation requested
 
         self.slides: List[PhotoSlide | VideoSlide] = []
         self.transitions: List[object] = []  # from get_transition()
@@ -151,36 +152,37 @@ class Slideshow:
             ext = path.suffix.lower()
             
             # Check if we should create a multislide at this position
+            # Trigger: Every 5 slides (e.g., at indices 5, 10, 15, ...)
             if (multislide_frequency > 0 and 
-                len(self.slides) > 0 and  # Not the first slide
-                (len(self.slides) + 1) % multislide_frequency == 0 and  # Hit frequency
-                i + 2 < len(media_files) and  # Have enough files left
-                ext in (".jpg", ".jpeg", ".png")):  # Current file is image
+                len(self.slides) > 0 and  # Have at least one slide already
+                len(self.slides) % multislide_frequency == 0 and  # Every Nth slide
+                i + 2 < len(media_files)):  # Have enough files left
                 
-                # Check if next 2 files are also images
+                # Create MultiSlide from 3 consecutive files (can be any mix of photos and videos)
                 next_files = media_files[i:i+3]
-                if all(f.suffix.lower() in (".jpg", ".jpeg", ".png") for f in next_files):
-                    # Create MultiSlide from 3 consecutive image files
-                    resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
-                    fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
-                    
-                    from slideshow.slides.multi_slide import MultiSlide
-                    multi_slide = MultiSlide(
-                        i=i,
-                        media_files=media_files,
-                        duration=self.config["photo_duration"],
-                        resolution=resolution,
-                        fps=fps
-                    )
-                    self.slides.append(multi_slide)
-                    
-                    # Count the 3 photos consumed by the multislide
-                    photo_count += 3
-                    multislide_count += 1
-                    
-                    # Skip the files consumed by the multislide
-                    skip_until = i + multi_slide.get_slide_count()
-                    continue
+                resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
+                fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
+                
+                from slideshow.slides.multi_slide import MultiSlide
+                multi_slide = MultiSlide(
+                    i=i,
+                    media_files=media_files,
+                    duration=self.config["photo_duration"],
+                    resolution=resolution,
+                    fps=fps
+                )
+                self.slides.append(multi_slide)
+                
+                # Count photos and videos consumed by the multislide
+                photos_in_multi = sum(1 for f in next_files if f.suffix.lower() in (".jpg", ".jpeg", ".png"))
+                videos_in_multi = sum(1 for f in next_files if f.suffix.lower() in (".mp4", ".mov"))
+                photo_count += photos_in_multi
+                video_count += videos_in_multi
+                multislide_count += 1
+                
+                # Skip the files consumed by the multislide
+                skip_until = i + multi_slide.get_slide_count()
+                continue
             
             # Process single file normally
             if ext in (".jpg", ".jpeg", ".png"):
@@ -252,18 +254,38 @@ class Slideshow:
 #        self._log(f"[Slideshow] Running ffmpeg:\n{' '.join(cmd)}")
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         last_report = -1
-        while True:
-            line = proc.stdout.readline()
-            if line == '' and proc.poll() is not None:
-                break
-            m = re.search(r'out_time_ms=(\d+)', line)
-            if m and self.progress_callback and expected_seconds and expected_seconds > 0:
-                elapsed = int(m.group(1)) / 1_000_000.0
-                frac = max(0.0, min(elapsed / expected_seconds, 1.0))
-                current = base_offset + int(frac * span_steps)
-                if current != last_report:
-                    self.progress_callback(current, total_steps)
-                    last_report = current
+        try:
+            while True:
+                # Check for cancellation
+                if self.cancel_check and self.cancel_check():
+                    self._log("[Slideshow] Cancelling FFmpeg process...")
+                    proc.terminate()  # Send SIGTERM
+                    try:
+                        proc.wait(timeout=2)  # Wait up to 2 seconds for graceful termination
+                    except subprocess.TimeoutExpired:
+                        proc.kill()  # Force kill if it doesn't terminate
+                        proc.wait()
+                    raise RuntimeError("Export cancelled by user")
+                
+                line = proc.stdout.readline()
+                if line == '' and proc.poll() is not None:
+                    break
+                m = re.search(r'out_time_ms=(\d+)', line)
+                if m and self.progress_callback and expected_seconds and expected_seconds > 0:
+                    elapsed = int(m.group(1)) / 1_000_000.0
+                    frac = max(0.0, min(elapsed / expected_seconds, 1.0))
+                    current = base_offset + int(frac * span_steps)
+                    if current != last_report:
+                        self.progress_callback(current, total_steps)
+                        last_report = current
+        finally:
+            # Ensure process is cleaned up
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
         proc.wait()
         if proc.returncode != 0:
@@ -301,6 +323,11 @@ class Slideshow:
             # --- Render slides ---
             self._log("")  # Newline before slide rendering
             for i, slide in enumerate(self.slides):
+                # Check for cancellation
+                if self.cancel_check and self.cancel_check():
+                    self._log("[Slideshow] Cancelling export...")
+                    raise RuntimeError("Export cancelled by user")
+                
                 self._log(f"[Slideshow] Rendering slides ({i+1}/{total_items})...{'\r' if i < total_items else '\n'}")
                 slide.render(self.working_dir)  # sets slide._rendered_clip
                 if self.progress_callback:
@@ -322,6 +349,11 @@ class Slideshow:
             self._log("")  # Newline before transition rendering
             transition_clips = []
             for i in range(total_items - 1):
+                # Check for cancellation
+                if self.cancel_check and self.cancel_check():
+                    self._log("[Slideshow] Cancelling export...")
+                    raise RuntimeError("Export cancelled by user")
+                
                 self._log(f"[Slideshow] Rendering transitions ({i+1}/{total_transitions})...{'\r' if i < total_transitions else '\n'}")
                 trans_out = self.working_dir / f"trans_{i:03}.mp4"
                 self.transition.render(i, self.slides, trans_out)
@@ -330,6 +362,11 @@ class Slideshow:
                     self.progress_callback(total_items + i + 1, total_weighted_steps)
 
             # --- Write concat file ---
+            # Check for cancellation before assembly
+            if self.cancel_check and self.cancel_check():
+                self._log("[Slideshow] Cancelling export...")
+                raise RuntimeError("Export cancelled by user")
+            
             with self.concat_file.open("w") as f:
                 # Prepend intro clip if it exists
                 if self._intro_clip:

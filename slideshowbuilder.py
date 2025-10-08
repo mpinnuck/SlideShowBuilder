@@ -10,9 +10,8 @@ import os
 import sys
 import subprocess
 from slideshow.gui import GUI
-from slideshow.controller import SlideshowController
 
-VERSION = "8.4.0"
+VERSION = "8.5.0"
 
 if __name__ == "__main__":
     # Bring app to foreground on macOS (fail silently if error)
@@ -27,7 +26,6 @@ if __name__ == "__main__":
         except Exception:
             pass  # Not critical, continue anyway
     
-    controller = SlideshowController()
-    app = GUI(controller, VERSION)
+    app = GUI(VERSION)
     app.mainloop()
 

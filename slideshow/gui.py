@@ -83,6 +83,19 @@ def sanitize_project_name(name: str) -> str:
     """Remove spaces and special characters from project name for folder."""
     return re.sub(r'[\s\-]+', '', name)
 
+def build_project_paths(project_name: str) -> tuple[str, str]:
+    """
+    Build full project paths under ~/SlideshowBuilder/ProjectName/
+    Returns: (input_path, output_path)
+    """
+    if not project_name:
+        return ("", "")
+    sanitized = sanitize_project_name(project_name)
+    base_path = Path.home() / "SlideshowBuilder" / sanitized
+    input_path = str(base_path / "Slides")
+    output_path = str(base_path / "Output")
+    return (input_path, output_path)
+
 def build_output_path(base_folder: str, project_name: str) -> str:
     """Build full output path: base_folder/projectname (no spaces)."""
     if not base_folder or not project_name:
@@ -91,7 +104,7 @@ def build_output_path(base_folder: str, project_name: str) -> str:
     return str(Path(base_folder) / sanitized)
 
 class GUI(tk.Tk):
-    def __init__(self, controller, version="1.0.0"):
+    def __init__(self, version="1.0.0"):
         super().__init__()
         self.title(f"Slideshow Builder v{version}")
         
@@ -105,16 +118,11 @@ class GUI(tk.Tk):
             # Silently continue if icon can't be loaded
             pass
         
-        self.controller = controller
         # Load config - will try to load from last project
         self.config_data = load_config()
+        self.cancel_requested = False  # Flag for cancellation
         self.create_widgets()
         self.center_window()
-        
-        # Register callbacks with controller
-        if self.controller:
-            self.controller.register_progress_callback(self._on_progress)
-            self.controller.register_log_callback(self._on_log_message)
         
         # Check initial Play button state
         self._check_play_button_state()
@@ -225,7 +233,9 @@ class GUI(tk.Tk):
         self.play_button.pack(side=tk.LEFT, padx=(0, 6))  # Double spacing before Settings
         ttk.Button(self.button_frame, text="Preview & Rotate Images", command=self.open_image_rotator).pack(side=tk.LEFT, padx=(0, 3))
         ttk.Button(self.button_frame, text="Settings", command=self.open_settings).pack(side=tk.LEFT, padx=(0, 3))
-        ttk.Button(self.button_frame, text="Save Config", command=self.save_config).pack(side=tk.LEFT)
+        ttk.Button(self.button_frame, text="Save Config", command=self.save_config).pack(side=tk.LEFT, padx=(0, 3))
+        self.cancel_button = ttk.Button(self.button_frame, text="Cancel", command=self.cancel_export, state='disabled')
+        self.cancel_button.pack(side=tk.LEFT)
 
         # Progress Bar
         ttk.Label(self, text="Progress:").grid(row=8, column=0, sticky="nw", pady=(10, 0))
@@ -506,6 +516,12 @@ class GUI(tk.Tk):
             self._updating_ui = False
             
             self.log_message(f"Loaded project: {project_name}")
+            
+            # Update global settings to remember this project
+            app_settings = load_app_settings()
+            app_settings["last_project_path"] = str(get_project_config_path(output_folder))
+            save_app_settings(app_settings)
+            
             self._check_play_button_state()
             
         except Exception as e:
@@ -518,19 +534,24 @@ class GUI(tk.Tk):
         self.name_combo['values'] = self.project_history
     
     def _on_project_name_change(self):
-        """Handle project name changes on focus loss - update output folder path and load/save config."""
+        """Handle project name changes on focus loss - update folder paths and load/save config."""
         new_project_name = self.name_var.get()
         self.log_message(f"Project name changed to: {new_project_name}")
         
         current_output = self.output_var.get()
+        current_input = self.input_var.get()
+        
+        # Check if we're using the standard SlideshowBuilder structure
         if current_output:
-            # Get base folder (parent of current project folder)
-            base_folder = str(Path(current_output).parent)
-            # Rebuild with new project name
-            new_output_path = build_output_path(base_folder, new_project_name)
+            # Build new paths based on project name
+            new_input_path, new_output_path = build_project_paths(new_project_name)
+            
             if new_output_path != current_output:
                 self.output_var.set(new_output_path)
-                self.log_message(f"Output path updated to: {new_output_path}")
+                self.input_var.set(new_input_path)
+                self.log_message(f"Project paths updated:")
+                self.log_message(f"  Input: {new_input_path}")
+                self.log_message(f"  Output: {new_output_path}")
                 
                 # Check if the new path exists
                 output_path = Path(new_output_path)
@@ -541,6 +562,11 @@ class GUI(tk.Tk):
                         self.config_data.update(existing_config)
                         self._update_ui_from_config()
                         self.log_message(f"Loaded existing project settings from: {new_output_path}")
+                        
+                        # Update global settings to remember this project
+                        app_settings = load_app_settings()
+                        app_settings["last_project_path"] = str(get_project_config_path(new_output_path))
+                        save_app_settings(app_settings)
                     except Exception as e:
                         self.log_message(f"Could not load config from {new_output_path}: {e}")
                 else:
@@ -551,7 +577,10 @@ class GUI(tk.Tk):
                 # No path change, just save
                 self._auto_save_config()
         else:
-            # No output path yet
+            # No output path yet - set default paths
+            new_input_path, new_output_path = build_project_paths(new_project_name)
+            self.input_var.set(new_input_path)
+            self.output_var.set(new_output_path)
             self._auto_save_config()
     
     def _load_project_from_path(self, project_path: str, project_name: str):
@@ -584,6 +613,12 @@ class GUI(tk.Tk):
             self._updating_ui = False
             
             self.log_message(f"Loaded project: {project_name}")
+            
+            # Update global settings to remember this project
+            app_settings = load_app_settings()
+            app_settings["last_project_path"] = str(get_project_config_path(output_folder))
+            save_app_settings(app_settings)
+            
             self._check_play_button_state()
             
         except Exception as e:
@@ -870,6 +905,10 @@ class GUI(tk.Tk):
         # Disable export button during processing
         self.export_button.configure(state='disabled')
         self.play_button.configure(state='disabled')  # Disable play during export
+        self.cancel_button.configure(state='normal')  # Enable cancel during export
+        
+        # Reset cancellation flag
+        self.cancel_requested = False
         
         # Run export in background thread
         export_thread = threading.Thread(target=self._export_video_thread, daemon=True)
@@ -877,10 +916,28 @@ class GUI(tk.Tk):
     
     def _export_video_thread(self):
         """Background thread for video export"""
+        output_path = None
         try:
-            path = self.controller.export(self.config_data)
-            if path:
-                self.after(0, lambda: self.log_message(f"Video export completed: {path}"))
+            # Build output path
+            output_path = Path(self.config_data["output_folder"]) / f"{self.config_data['project_name']}.mp4"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Create slideshow and pass cancellation check
+            from slideshow.slideshowmodel import Slideshow
+            slideshow = Slideshow(self.config_data, log_callback=self._on_log_message, progress_callback=self._on_progress)
+            slideshow.cancel_check = lambda: self.cancel_requested
+            
+            # Render the slideshow
+            slideshow.render(output_path)
+            
+            # Check if cancelled at the end
+            if self.cancel_requested:
+                self.after(0, lambda: self.log_message("[GUI] Export cancelled by user"))
+                return
+            
+            # Success
+            if output_path:
+                self.after(0, lambda: self.log_message(f"[GUI] Slideshow successfully exported → {output_path}"))
                 self.after(0, lambda: self.update_progress(100, 100))
                 # Brief pause to show 100% completion
                 import time
@@ -888,17 +945,28 @@ class GUI(tk.Tk):
                 self.after(500, self.reset_progress)  # Reset progress bar after brief pause
                 self.after(0, self._check_play_button_state)  # Enable Play button
         except Exception as e:
-            error_msg = f"Export failed: {str(e)}"
-            self.after(0, lambda: self.log_message(error_msg))
+            # Check if it was a cancellation
+            if self.cancel_requested:
+                error_msg = "Export cancelled by user"
+            else:
+                error_msg = f"Export failed: {str(e)}"
+            self.after(0, lambda msg=error_msg: self.log_message(msg))
             self.after(0, self.reset_progress)  # Reset progress on error too
         finally:
-            # Re-enable export button
+            # Re-enable export button and disable cancel button
             self.after(0, self._re_enable_export_button)
     
     def _re_enable_export_button(self):
         """Re-enable the export button after processing"""
         self.export_button.configure(state='normal')
+        self.cancel_button.configure(state='disabled')  # Disable cancel when not exporting
         # Play button state will be set by _check_play_button_state() call
+    
+    def cancel_export(self):
+        """Cancel the current export operation"""
+        self.cancel_requested = True
+        self.log_message("Cancelling export... please wait")
+        self.cancel_button.configure(state='disabled')  # Disable after clicked
     
     def open_image_rotator(self):
         """Open the image preview and rotation dialog"""
@@ -983,6 +1051,20 @@ class ImageRotatorDialog:
         
         ttk.Button(top_frame, text="Go", command=self._jump_to_image).pack(side=tk.LEFT, padx=5)
         
+        # Slider for rapid scrolling (right side of top frame)
+        ttk.Label(top_frame, text="Scroll:").pack(side=tk.LEFT, padx=(20, 5))
+        self.slider_var = tk.IntVar(value=1)
+        self.slider = ttk.Scale(
+            top_frame, 
+            from_=1, 
+            to=len(self.image_files),
+            orient=tk.HORIZONTAL,
+            variable=self.slider_var,
+            command=self._on_slider_change,
+            length=400
+        )
+        self.slider.pack(side=tk.LEFT, padx=5)
+        
         # Filename label
         self.filename_label = ttk.Label(self.dialog, text="", font=("TkDefaultFont", 10, "bold"))
         self.filename_label.pack(pady=(0, 10))
@@ -1006,6 +1088,7 @@ class ImageRotatorDialog:
         ttk.Button(rotation_frame, text="↶ 90° Left", command=lambda: self._rotate(-90)).pack(side=tk.LEFT, padx=5)
         ttk.Button(rotation_frame, text="↷ 90° Right", command=lambda: self._rotate(90)).pack(side=tk.LEFT, padx=5)
         ttk.Button(rotation_frame, text="↻ 180°", command=lambda: self._rotate(180)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(rotation_frame, text="🗑 Delete", command=self._delete_image).pack(side=tk.LEFT, padx=(20, 5))
         
         self.rotation_label = ttk.Label(rotation_frame, text="", font=("TkDefaultFont", 10))
         self.rotation_label.pack(side=tk.LEFT, padx=20)
@@ -1021,8 +1104,10 @@ class ImageRotatorDialog:
         # Keyboard shortcuts
         self.dialog.bind('<Left>', lambda e: self._prev_image())
         self.dialog.bind('<Right>', lambda e: self._next_image())
-        self.dialog.bind('<Command-Left>', lambda e: self._rotate(-90))
-        self.dialog.bind('<Command-Right>', lambda e: self._rotate(90))
+        self.dialog.bind('<Shift-Left>', lambda e: self._rotate(-90))
+        self.dialog.bind('<Shift-Right>', lambda e: self._rotate(90))
+        self.dialog.bind('<Delete>', lambda e: self._delete_image())
+        self.dialog.bind('<BackSpace>', lambda e: self._delete_image())  # Alternative for Delete
     
     def _load_image(self):
         """Load and display the current image"""
@@ -1035,6 +1120,9 @@ class ImageRotatorDialog:
         # Update counter and filename
         self.counter_label.config(text=f"Image {self.current_index + 1} of {len(self.image_files)}")
         self.filename_label.config(text=filename)
+        
+        # Update slider to match current index (without triggering callback)
+        self.slider_var.set(self.current_index + 1)
         
         # Clear rotation label
         self.rotation_label.config(text="")
@@ -1140,6 +1228,61 @@ class ImageRotatorDialog:
                 wide_messagebox("error", "Error", f"Please enter a number between 1 and {len(self.image_files)}")
         except ValueError:
             wide_messagebox("error", "Error", "Please enter a valid number")
+    
+    def _on_slider_change(self, value):
+        """Handle slider value change for rapid scrolling"""
+        # Convert slider value (1-based) to array index (0-based)
+        target = int(float(value)) - 1
+        if 0 <= target < len(self.image_files) and target != self.current_index:
+            self.current_index = target
+            self._load_image()
+    
+    def _delete_image(self):
+        """Delete the current image after confirmation"""
+        if not self.image_files:
+            return
+        
+        image_path = self.image_files[self.current_index]
+        filename = image_path.name
+        
+        # Confirm deletion
+        result = wide_messagebox("question", "Confirm Delete", 
+                                f"Are you sure you want to delete '{filename}'?\n\nThis action cannot be undone!")
+        
+        if result:
+            try:
+                # Delete the file
+                import os
+                os.remove(image_path)
+                
+                # Log the deletion
+                self.parent.log_message(f"Deleted image: {filename}")
+                
+                # Remove from our list
+                del self.image_files[self.current_index]
+                
+                # Clear thumbnail cache
+                self.thumbnail_cache.pop(filename, None)
+                
+                # Update slider range
+                self.slider.config(to=len(self.image_files))
+                
+                # Check if we have any images left
+                if not self.image_files:
+                    wide_messagebox("info", "No Images", "No more images in folder.")
+                    self.dialog.destroy()
+                    return
+                
+                # Adjust index if needed
+                if self.current_index >= len(self.image_files):
+                    self.current_index = len(self.image_files) - 1
+                
+                # Load the next/previous image
+                self._load_image()
+                
+            except Exception as e:
+                self.parent.log_message(f"Error deleting image {filename}: {e}")
+                wide_messagebox("error", "Error", f"Failed to delete image: {e}")
     
     def _save(self):
         """Images are already saved to disk - nothing to save"""
