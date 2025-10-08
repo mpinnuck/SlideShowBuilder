@@ -9,14 +9,14 @@ from pathlib import Path
 from PIL import Image, ImageOps
 import tempfile
 import subprocess
-from slideshow.config import get_ffmpeg_encoding_params
+from slideshow.config import Config
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 
 class MultiSlide(SlideItem):
-    def __init__(self, i, media_files, duration: float, resolution=(1920, 1080), fps=30, config=None):
+    def __init__(self, i, media_files, duration: float, resolution=(1920, 1080), fps=30):
         """
         Create a MultiSlide from a starting index and media files list.
         
@@ -26,7 +26,6 @@ class MultiSlide(SlideItem):
             duration: Duration for the slide
             resolution: Output resolution
             fps: Frame rate for video rendering
-            config: Project configuration dictionary (optional, for quality settings)
         """
         # Initialize super class with the first image path
         super().__init__(media_files[i], duration, resolution)
@@ -34,7 +33,6 @@ class MultiSlide(SlideItem):
         self.index = i
         self.media_files = media_files
         self.fps = fps
-        self.config = config
         self.composite_image = None
         self.slide_count = 3  # Hard coded initially
         
@@ -400,7 +398,7 @@ class MultiSlide(SlideItem):
             "-framerate", str(self.fps),
             "-i", "pipe:0",
         ]
-        cmd.extend(get_ffmpeg_encoding_params(config=self.config))  # Use project quality settings
+        cmd.extend(Config.instance().get_ffmpeg_encoding_params())  # Use project quality settings
         cmd.extend([
             "-pix_fmt", "yuv420p",
             str(output_path)

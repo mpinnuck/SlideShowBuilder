@@ -227,7 +227,7 @@ class LeftRightFold(OrigamiFrameTransition):
 
         frames = self.render_frames(from_img, to_img)
         from slideshow.transitions.utils import save_frames_as_video
-        save_frames_as_video(frames, output_path, fps=self.fps, config=self.config)
+        save_frames_as_video(frames, output_path, fps=self.fps)
         
         # Basic transitions always consume exactly 1 slide
         return 1
