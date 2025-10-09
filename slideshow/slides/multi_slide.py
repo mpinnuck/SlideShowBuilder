@@ -13,6 +13,7 @@ from slideshow.config import cfg
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
+from slideshow.transitions.utils import get_video_duration
 
 
 class MultiSlide(SlideItem):
@@ -47,7 +48,7 @@ class MultiSlide(SlideItem):
         try:
             if self.index < len(self.media_files):
                 main_file = self.media_files[self.index]
-                if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png']:
+                if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
                     with Image.open(main_file) as img:
                         # Apply EXIF orientation to get correct dimensions
                         img = ImageOps.exif_transpose(img)
@@ -81,7 +82,7 @@ class MultiSlide(SlideItem):
             if self.index + j < len(self.media_files):
                 file_path = self.media_files[self.index + j]
                 # Only load image files
-                if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
+                if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
                     img = Image.open(file_path)
                     # Apply EXIF orientation to display correctly
                     img = ImageOps.exif_transpose(img)
@@ -267,9 +268,17 @@ class MultiSlide(SlideItem):
         elif media_source['type'] == 'video':
             # Extract frame from video at appropriate time
             video_path = media_source['path']
+            video_duration = media_source.get('duration')
             
-            # Calculate time position in the video
+            # Calculate time position in the slide
             time_position = (frame_num / total_frames) * self.duration
+            
+            # If video is shorter than slide duration, loop it
+            if video_duration and video_duration > 0:
+                # Loop by using modulo
+                time_position = time_position % video_duration
+                # Clamp to slightly before end to avoid seeking past video
+                time_position = min(time_position, video_duration - 0.01)
             
             # Use FFmpeg to extract the frame at this time
             cmd = [
@@ -285,6 +294,7 @@ class MultiSlide(SlideItem):
             
             try:
                 result = subprocess.run(cmd, capture_output=True)
+                
                 if result.returncode == 0 and result.stdout:
                     # Convert raw RGB data to PIL Image
                     import numpy as np
@@ -292,11 +302,13 @@ class MultiSlide(SlideItem):
                     # For now, assume standard resolution and resize later
                     width, height = 1920, 1080  # Default assumption
                     frame_data = np.frombuffer(result.stdout, dtype=np.uint8)
+                    
                     if len(frame_data) >= width * height * 3:
                         frame_array = frame_data[:width * height * 3].reshape((height, width, 3))
-                        return Image.fromarray(frame_array, 'RGB')
+                        img = Image.fromarray(frame_array, 'RGB')
+                        return img
             except Exception as e:
-                print(f"[MultiSlide] Warning: Failed to extract video frame: {e}")
+                print(f"[MultiSlide] ERROR: Failed to extract video frame: {e}")
             
             # Fallback: return a black image
             return Image.new('RGB', (1920, 1080), (0, 0, 0))
@@ -372,7 +384,7 @@ class MultiSlide(SlideItem):
         # Prepare media sources
         media_sources = []
         for path in media_paths:
-            if path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
+            if path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
                 # Static image
                 img = Image.open(path)
                 # Apply EXIF orientation to display correctly
@@ -382,7 +394,13 @@ class MultiSlide(SlideItem):
                 media_sources.append({'type': 'image', 'data': img})
             elif path.suffix.lower() in ['.mp4', '.mov']:
                 # Video - we'll extract frames as needed
-                media_sources.append({'type': 'video', 'path': path})
+                # Get actual video duration to handle looping/clamping
+                try:
+                    video_duration = get_video_duration(path)
+                except Exception as e:
+                    print(f"[MultiSlide] WARNING: Could not get duration for {path.name}: {e}")
+                    video_duration = None
+                media_sources.append({'type': 'video', 'path': path, 'duration': video_duration})
         
         # Create output video using FFmpeg with frame-by-frame input
         output_path = working_dir / f"{self.path.stem}.mp4"

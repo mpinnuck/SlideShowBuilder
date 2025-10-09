@@ -1,5 +1,6 @@
 from pathlib import Path
 import cv2
+import numpy as np
 from PIL import Image
 from slideshow.config import cfg, DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
@@ -53,9 +54,20 @@ class PhotoSlide(SlideItem):
         clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
         self._rendered_clip = clip_path
 
-        img = cv2.imread(str(self.path))
-        if img is None:
-            raise RuntimeError(f"Cannot load image: {self.path}")
+        # Load image - use PIL for HEIC support, then convert to OpenCV format
+        try:
+            # Try PIL first (supports HEIC, JPEG, PNG, etc.)
+            with Image.open(self.path) as pil_img:
+                # Convert to RGB if needed
+                if pil_img.mode != 'RGB':
+                    pil_img = pil_img.convert('RGB')
+                # Convert PIL image to OpenCV format (RGB -> BGR)
+                img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            # Fallback to cv2.imread for compatibility
+            img = cv2.imread(str(self.path))
+            if img is None:
+                raise RuntimeError(f"Cannot load image: {self.path}. Error: {e}")
 
         h, w = img.shape[:2]
         target_w, target_h = self.resolution

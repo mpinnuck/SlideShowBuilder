@@ -5,7 +5,10 @@ A professional Python-based macOS application for creating stunning video slides
 ## Features
 
 ### Core Functionality
-- **Mixed Media Support**: Combine photos (JPG, PNG) and videos (MP4, MOV) in a single slideshow
+- **Mixed Media Support**: Combine photos (JPG, PNG, HEIC) and videos (MP4, MOV) in a single slideshow
+  - Full HEIC/HEIF support for iPhone and iPad photos
+  - Automatic AAE metadata file filtering (Apple photo edits)
+  - System file filtering (.DS_Store, Thumbs.db)
 - **Multi-Image Layouts**: Automatically create 3-photo composite slides at configurable intervals
 - **Advanced Transitions**: 
   - Origami-style paper-folding effects with realistic lighting
@@ -527,6 +530,7 @@ The app automatically finds FFmpeg on macOS without requiring PATH configuration
 See `requirements.txt` for complete Python dependencies:
 - opencv-python
 - numpy
+- pillow-heif (for HEIC/HEIF image support from iPhone/iPad)
 - tkinter (usually included with Python)
 
 ## License

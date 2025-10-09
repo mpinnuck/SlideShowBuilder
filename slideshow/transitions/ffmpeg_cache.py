@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 from typing import Optional, Union, Dict, Any
 import os
+from slideshow.config import cfg
 
 
 class FFmpegCache:
@@ -96,6 +97,31 @@ class FFmpegCache:
         
         cls._initialized = True
         cls._enabled = True
+    
+    @classmethod
+    def auto_configure(cls):
+        """
+        Automatically configure the cache if not already configured.
+        Determines cache directory from global config and calls configure().
+        
+        This is called automatically by cache methods, so callers don't need
+        to worry about configuring the cache before use.
+        """
+        # If already configured, nothing to do
+        if cls._initialized and cls._cache_dir:
+            return
+        
+        # Try to determine cache directory from global config
+        try:
+            output_folder = cfg.get("output_folder", "")
+            if output_folder:
+                working_dir = Path(output_folder) / "working"
+                cache_dir = working_dir / "ffmpeg_cache"
+                cls.configure(cache_dir)
+        except Exception as e:
+            # If we can't auto-configure, cache will remain disabled
+            # This is not fatal - the application will just skip caching
+            pass
     
     @classmethod
     def _save_metadata(cls):
@@ -255,8 +281,19 @@ class FFmpegCache:
     
     @classmethod
     def clear_cache(cls):
-        """Clear all cached files and metadata."""
-        if cls._cache_dir and cls._cache_dir.exists():
+        """
+        Clear all cached files and metadata.
+        Automatically configures cache if needed.
+        """
+        # Auto-configure if not already configured
+        cls.auto_configure()
+        
+        # If still not initialized, can't clear
+        if not cls._initialized or not cls._cache_dir:
+            print(f"[FFmpegCache] Cache not configured. Cannot clear cache.")
+            return
+            
+        if cls._cache_dir.exists():
             try:
                 # Get stats before clearing
                 entries_before = len(cls._metadata.get("entries", {}))
@@ -281,17 +318,41 @@ class FFmpegCache:
                 import traceback
                 traceback.print_exc()
         else:
-            print(f"[FFmpegCache] Cache directory not configured or doesn't exist: {cls._cache_dir}")
+            print(f"[FFmpegCache] Cache directory doesn't exist: {cls._cache_dir}")
     
     @classmethod
     def get_cache_entries_with_sources(cls) -> Dict[str, Any]:
-        """Get cache entries mapped to their source files for better visibility."""
+        """Get cache entries mapped to their source files for better visibility. Automatically configures cache if needed."""
+        cls.auto_configure()
+        
         if not cls._cache_dir:
             return {"enabled": False, "entries": []}
         
         entries = cls._metadata.get("entries", {})
         mapped_entries = []
         
+        # First pass: collect all slides and build a sequence map
+        slide_operations = ["photo_slide_render", "video_slide_render", "multi_slide_render"]
+        slides_by_source = {}  # Maps source path to (mtime, sequence_index)
+        
+        for cache_key, entry in entries.items():
+            source_path = Path(entry.get("input_path", "Unknown"))
+            operation = entry.get("params", {}).get("operation", "unknown")
+            
+            # Collect slide entries to build sequence
+            if operation in slide_operations and source_path.exists():
+                try:
+                    source_mtime = source_path.stat().st_mtime
+                    source_key = str(source_path.absolute())
+                    slides_by_source[source_key] = source_mtime
+                except (OSError, IOError):
+                    pass
+        
+        # Sort slides by mtime to get chronological sequence
+        sorted_slides = sorted(slides_by_source.items(), key=lambda x: x[1])
+        slide_sequence = {path: idx for idx, (path, mtime) in enumerate(sorted_slides)}
+        
+        # Second pass: build mapped entries with sequence info
         for cache_key, entry in entries.items():
             source_path = Path(entry.get("input_path", "Unknown"))
             operation = entry.get("params", {}).get("operation", "unknown")
@@ -306,6 +367,82 @@ class FFmpegCache:
             else:
                 cached_file = None
             
+            # Determine sequence position
+            sequence_pos = 999999  # Default for unknown
+            sequence_sub = 0  # 0 for slides, 1 for transitions, 2 for frames
+            
+            if operation == "intro_title_render":
+                sequence_pos = -1  # Intro comes first
+            elif operation in slide_operations:
+                # Regular slide - use its position in the sorted list
+                source_key = str(source_path.absolute())
+                sequence_pos = slide_sequence.get(source_key, 999999)
+            elif operation == "extract_frame":
+                # Frame extraction - match to source slide by filename
+                # input_path is like "/path/to/IMG_6653_1c397474.mp4" (rendered clip)
+                # Extract base name without hash: IMG_6653
+                source_name = source_path.stem  # e.g., "IMG_6653_1c397474"
+                
+                # Remove hash suffix - find the last underscore followed by hex chars
+                # IMG_6653_1c397474 -> IMG_6653
+                # IMG_6659 -> IMG_6659 (no hash)
+                if '_' in source_name:
+                    # Split and check if last part looks like a hash (8 hex chars)
+                    parts = source_name.rsplit('_', 1)
+                    if len(parts) == 2 and len(parts[1]) == 8 and all(c in '0123456789abcdef' for c in parts[1]):
+                        base_name = parts[0]
+                    else:
+                        base_name = source_name
+                else:
+                    base_name = source_name
+                
+                # Find matching slide in sequence by exact filename match
+                for slide_path, idx in slide_sequence.items():
+                    slide_filename = Path(slide_path).stem
+                    # Exact match on base name
+                    if base_name == slide_filename:
+                        sequence_pos = idx
+                        sequence_sub = 2  # Frames sort after transitions for same slide
+                        break
+            elif operation in ["fade_transition", "origami_transition_render"]:
+                # Transition - figure out which slide it follows
+                # For fade transitions, check params
+                from_slide_path = entry.get("params", {}).get("from_slide", "")
+                from_slide_name = None
+                
+                if from_slide_path:
+                    # Fade transition: from_slide contains path to rendered clip
+                    from_slide_stem = Path(from_slide_path).stem
+                    # Remove hash suffix if present (e.g., "IMG_3819_abc123" -> "IMG_3819")
+                    from_slide_name = from_slide_stem.split('_')[0] if '_' in from_slide_stem else from_slide_stem
+                else:
+                    # Origami transition: input_path is like "IMG_6653.HEIC (Duration: 3.00s)_to_IMG_6654.HEIC (Duration: 3.00s)"
+                    input_path_str = entry.get("input_path", "")
+                    if "_to_" in input_path_str:
+                        from_part = input_path_str.split("_to_")[0]
+                        # Extract just the filename (remove duration info)
+                        if " (Duration:" in from_part:
+                            from_slide_name = from_part.split(" (Duration:")[0]
+                        else:
+                            from_slide_name = from_part
+                
+                # Find matching slide in sequence
+                if from_slide_name:
+                    for slide_path, idx in slide_sequence.items():
+                        slide_filename = Path(slide_path).name
+                        if from_slide_name in slide_filename or slide_filename.startswith(from_slide_name):
+                            sequence_pos = idx
+                            sequence_sub = 1  # Comes after the slide
+                            break
+            
+            # Get cached file modification time for frames (used for sorting)
+            cached_file_mtime = 0
+            if cached_file and cached_file.exists():
+                try:
+                    cached_file_mtime = cached_file.stat().st_mtime
+                except (OSError, IOError):
+                    pass
+            
             mapped_entries.append({
                 "cache_key": cache_key,
                 "source_file": source_path.name,
@@ -316,21 +453,38 @@ class FFmpegCache:
                 "cached_file": str(cached_file) if cached_file else "Unknown",
                 "params": entry.get("params", {}),
                 "created": entry.get("created", 0),
-                "last_accessed": entry.get("last_accessed", entry.get("created", 0))
+                "last_accessed": entry.get("last_accessed", entry.get("created", 0)),
+                "sequence_pos": sequence_pos,
+                "sequence_sub": sequence_sub,
+                "cached_file_mtime": cached_file_mtime
             })
         
-        # Sort by source file name for easier browsing
-        mapped_entries.sort(key=lambda x: x["source_file"])
+        # Separate clips and frames for different sorting strategies
+        clips = [e for e in mapped_entries if e["type"] == "clip"]
+        frames = [e for e in mapped_entries if e["type"] == "frame"]
+        
+        # Sort clips in video concatenation order: intro → slide1 → transition1 → slide2 → transition2 → ...
+        clips.sort(key=lambda x: (x["sequence_pos"], x["sequence_sub"]))
+        
+        # Sort frames by their cached file modification time (chronological creation order)
+        frames.sort(key=lambda x: x["cached_file_mtime"])
+        
+        # Combine for backward compatibility with existing code
+        all_entries = clips + frames
         
         return {
             "enabled": cls._enabled,
-            "total_entries": len(mapped_entries),
-            "entries": mapped_entries
+            "total_entries": len(all_entries),
+            "entries": all_entries,
+            "clips": clips,
+            "frames": frames
         }
 
     @classmethod
     def get_cache_stats(cls) -> Dict[str, Any]:
-        """Get cache statistics."""
+        """Get cache statistics. Automatically configures cache if needed."""
+        cls.auto_configure()
+        
         if not cls._cache_dir:
             return {"enabled": False}
             
@@ -379,7 +533,9 @@ class FFmpegCache:
     
     @classmethod
     def reset_stats(cls):
-        """Reset cache hit/miss statistics."""
+        """Reset cache hit/miss statistics. Automatically configures cache if needed."""
+        cls.auto_configure()
+        
         cls._metadata.setdefault("stats", {})["hits"] = 0
         cls._metadata.setdefault("stats", {})["misses"] = 0
         cls._save_metadata()
@@ -388,6 +544,7 @@ class FFmpegCache:
     def invalidate_file(cls, file_path: Union[str, Path]):
         """
         Invalidate all cache entries for a specific input file.
+        Automatically configures cache if needed.
         
         This should be called when a file is modified (e.g., rotated),
         to ensure stale cached data is removed.
@@ -395,6 +552,8 @@ class FFmpegCache:
         Args:
             file_path: Path to the file whose cache entries should be invalidated
         """
+        cls.auto_configure()
+        
         if not cls._cache_dir:
             return
         
@@ -433,7 +592,9 @@ class FFmpegCache:
     
     @classmethod
     def cleanup_old_entries(cls, max_age_days: int = 30):
-        """Remove cache entries older than specified days."""
+        """Remove cache entries older than specified days. Automatically configures cache if needed."""
+        cls.auto_configure()
+        
         if not cls._cache_dir:
             return
             

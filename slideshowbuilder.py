@@ -11,7 +11,14 @@ import sys
 import subprocess
 from slideshow.gui import GUI
 
-VERSION = "9.1.0"
+# Register HEIF/HEIC format support with PIL
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass  # pillow-heif not installed, HEIC files won't be supported
+
+VERSION = "9.2.0"
 
 if __name__ == "__main__":
     # Bring app to foreground on macOS (fail silently if error)

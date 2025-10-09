@@ -135,7 +135,20 @@ class Slideshow:
         multislide_frequency = self.config.get("multislide_frequency", 0)
         
         # Sort by file modification time (chronological order) instead of filename
-        media_files = sorted(input_folder.glob("*"), key=lambda p: p.stat().st_mtime)
+        all_files = sorted(input_folder.glob("*"), key=lambda p: p.stat().st_mtime)
+        
+        # Filter out non-media files
+        # AAE files are Apple's edit metadata files that accompany photos
+        # DS_Store, Thumbs.db are system metadata files
+        ignored_extensions = {'.aae', '.ini', '.db', '.tmp'}
+        ignored_names = {'.ds_store', 'thumbs.db', 'desktop.ini'}
+        media_files = [
+            f for f in all_files 
+            if f.suffix.lower() not in ignored_extensions 
+            and f.name.lower() not in ignored_names
+            and f.is_file()
+        ]
+        
         skip_until = 0  # Track files consumed by MultiSlides
         
         # Counters for import summary
@@ -177,7 +190,7 @@ class Slideshow:
                 self.slides.append(multi_slide)
                 
                 # Count photos and videos consumed by the multislide
-                photos_in_multi = sum(1 for f in next_files if f.suffix.lower() in (".jpg", ".jpeg", ".png"))
+                photos_in_multi = sum(1 for f in next_files if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".heic"))
                 videos_in_multi = sum(1 for f in next_files if f.suffix.lower() in (".mp4", ".mov"))
                 photo_count += photos_in_multi
                 video_count += videos_in_multi
@@ -188,7 +201,7 @@ class Slideshow:
                 continue
             
             # Process single file normally
-            if ext in (".jpg", ".jpeg", ".png"):
+            if ext in (".jpg", ".jpeg", ".png", ".heic"):
                 resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
                 fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
                 

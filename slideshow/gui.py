@@ -1052,7 +1052,7 @@ class ImageRotatorDialog:
         
         # Find all image files
         self.image_files = []
-        for ext in ['.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG']:
+        for ext in ['.jpg', '.jpeg', '.png', '.heic', '.JPG', '.JPEG', '.PNG', '.HEIC']:
             self.image_files.extend(self.input_folder.glob(f'*{ext}'))
         
         # Sort all files together by name (case-insensitive for better sorting)
@@ -1399,6 +1399,10 @@ class SettingsDialog:
         self.notebook = ttk.Notebook(self.dialog)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
+        # Advanced Settings Tab (first tab)
+        self.advanced_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.advanced_frame, text="Advanced")
+        
         # Transition Settings Tab
         self.transition_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.transition_frame, text="Transitions")
@@ -1406,10 +1410,6 @@ class SettingsDialog:
         # Title Settings Tab
         self.title_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.title_frame, text="Title/Intro")
-        
-        # Advanced Settings Tab
-        self.advanced_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.advanced_frame, text="Advanced")
     
     def _create_buttons(self):
         """Create OK, Cancel, and Apply buttons"""
@@ -1878,14 +1878,7 @@ class SettingsDialog:
         try:
             from slideshow.transitions.ffmpeg_cache import FFmpegCache
             
-            # Configure cache with current settings to get accurate stats
-            cache_dir = self.ffmpeg_cache_dir_var.get().strip()
-            if not cache_dir:
-                # Use default location
-                output_folder = self.config_data.get("output_folder", "data/output")
-                cache_dir = f"{output_folder}/working/ffmpeg_cache"
-            
-            FFmpegCache.configure(cache_dir)
+            # Cache auto-configures itself now
             stats = FFmpegCache.get_cache_stats()
             
             if stats.get("enabled", False):
@@ -1933,19 +1926,8 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
         if result:
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
-                from pathlib import Path
                 
-                # Configure cache path before clearing
-                # Use the working directory from current project config
-                config = self.parent.model.config if hasattr(self.parent, 'model') else {}
-                output_folder = config.get("output_folder", "")
-                
-                if output_folder:
-                    working_dir = Path(output_folder) / "working"
-                    cache_dir = working_dir / "ffmpeg_cache"
-                    FFmpegCache.configure(cache_dir)
-                
-                # Now clear the cache
+                # Cache auto-configures itself now
                 FFmpegCache.clear_cache()
                 if hasattr(self, 'parent') and hasattr(self.parent, 'log_message'):
                     self.parent.log_message("[FFmpegCache] Cache cleared successfully")
@@ -1961,6 +1943,8 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
         if result:
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+                
+                # Cache auto-configures itself now
                 FFmpegCache.cleanup_old_entries(30)
                 # No confirmation - user already pressed OK
             except Exception as e:
@@ -1974,13 +1958,7 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
                 
-                # Configure cache with current settings first
-                cache_dir = self.ffmpeg_cache_dir_var.get().strip()
-                if not cache_dir:
-                    output_folder = self.config_data.get("output_folder", "data/output")
-                    cache_dir = f"{output_folder}/working/ffmpeg_cache"
-                
-                FFmpegCache.configure(cache_dir)
+                # Cache auto-configures itself now
                 FFmpegCache.reset_stats()
                 
                 # No confirmation - user already pressed OK
@@ -1992,13 +1970,7 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
         try:
             from slideshow.transitions.ffmpeg_cache import FFmpegCache
             
-            # Configure cache with current settings
-            cache_dir = self.ffmpeg_cache_dir_var.get().strip()
-            if not cache_dir:
-                output_folder = self.config_data.get("output_folder", "data/output")
-                cache_dir = f"{output_folder}/working/ffmpeg_cache"
-            
-            FFmpegCache.configure(cache_dir)
+            # Cache auto-configures itself now
             cache_data = FFmpegCache.get_cache_entries_with_sources()
             
             if not cache_data.get("enabled", False):
@@ -2032,10 +2004,9 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
             main_frame = ttk.Frame(browser_window)
             main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            # Info label
-            cache_entries = cache_data.get('entries', [])
-            clips = [e for e in cache_entries if e['type'] == 'clip']
-            frames = [e for e in cache_entries if e['type'] == 'frame']
+            # Info label - use pre-separated clips and frames from cache_data
+            clips = cache_data.get('clips', [])
+            frames = cache_data.get('frames', [])
             
             info_label = ttk.Label(main_frame, 
                                  text=f"Cache Contents: {len(clips)} clips, {len(frames)} frames ({cache_data['total_entries']} total)",
