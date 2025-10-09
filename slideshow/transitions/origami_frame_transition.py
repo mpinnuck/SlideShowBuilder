@@ -11,6 +11,13 @@ from slideshow.transitions.base_transition import BaseTransition
 from slideshow.transitions.utils import save_frames_as_video
 
 
+# Black pixel discard threshold for origami transitions
+# Set to 1e-35 to only discard absolute zero (0.0, 0.0, 0.0) black padding pixels
+# This preserves all legitimate dark image content while making pillarbox/letterbox
+# borders transparent so the fold occurs at the actual image edge, not the canvas edge
+ORIGAMI_BLACK_DISCARD_THRESHOLD = 1e-35  # 1 × 10^-35
+
+
 class OrigamiFrameTransition(BaseTransition, ABC):
     """
     Abstract base for origami-style transitions (folds, flips, etc).

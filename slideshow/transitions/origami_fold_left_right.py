@@ -2,7 +2,10 @@
 
 import numpy as np
 import moderngl
-from slideshow.transitions.origami_frame_transition import OrigamiFrameTransition
+from slideshow.transitions.origami_frame_transition import (
+    OrigamiFrameTransition,
+    ORIGAMI_BLACK_DISCARD_THRESHOLD,
+)
 from slideshow.transitions.origami_render import generate_full_screen_mesh_x
 
 
@@ -86,19 +89,19 @@ class LeftRightFold(OrigamiFrameTransition):
         """
 
     def _phase1_fragment_shader(self):
-        return """
+        return f"""
         #version 330
         in vec2 uv;
         out vec4 fragColor;
         uniform sampler2D tex;
-        void main() {
+        void main() {{
             vec4 c = texture(tex, uv);
-            // Discard padded black pixels
-            if (c.r < 0.02 && c.g < 0.02 && c.b < 0.02) {
-                discard;
-            }
+            // Discard test commented out for testing
+            //if (c.r < {ORIGAMI_BLACK_DISCARD_THRESHOLD} && c.g < {ORIGAMI_BLACK_DISCARD_THRESHOLD} && c.b < {ORIGAMI_BLACK_DISCARD_THRESHOLD}) {{
+            //    discard;  // discard only absolute zero black padding
+            //}}
             fragColor = c;
-        }
+        }}
         """
     
     # ---- Phase 2: unfold remaining half of to_img ----
@@ -180,10 +183,10 @@ class LeftRightFold(OrigamiFrameTransition):
             void main() {{
                 {discard_test}
                 vec4 c = texture(tex, uv);
-                // Discard padded black pixels
-                if (c.r < 0.02 && c.g < 0.02 && c.b < 0.02) {{
-                    discard;
-                }}
+                // Discard test commented out for testing
+                //if (c.r < {ORIGAMI_BLACK_DISCARD_THRESHOLD} && c.g < {ORIGAMI_BLACK_DISCARD_THRESHOLD} && c.b < {ORIGAMI_BLACK_DISCARD_THRESHOLD}) {{
+                //    discard;  // discard only absolute zero black padding
+                //}}
                 fragColor = c;
             }}
             """

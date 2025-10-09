@@ -2,7 +2,10 @@
 
 import numpy as np
 import moderngl
-from slideshow.transitions.origami_frame_transition import OrigamiFrameTransition
+from slideshow.transitions.origami_frame_transition import (
+    OrigamiFrameTransition,
+    ORIGAMI_BLACK_DISCARD_THRESHOLD,
+)
 from slideshow.transitions.origami_render import (
     generate_full_screen_mesh_x,
     generate_full_screen_mesh_y,
@@ -123,18 +126,19 @@ class OrigamiFoldCenter(OrigamiFrameTransition):
                 gl_Position = vec4(pos.x, pos.y, -pos.z * 0.1, 1.0);
             }}
             """,
-            fragment_shader="""
+            fragment_shader=f"""
             #version 330
             in vec2 uv;
             out vec4 fragColor;
             uniform sampler2D tex;
-            void main() {
+            void main() {{
                 vec4 c = texture(tex, uv);
-                if (c.r < 0.02 && c.g < 0.02 && c.b < 0.02) {
-                    discard;  // discard black padding
-                }
+                // Discard test commented out for testing
+                //if (c.r < {ORIGAMI_BLACK_DISCARD_THRESHOLD} && c.g < {ORIGAMI_BLACK_DISCARD_THRESHOLD} && c.b < {ORIGAMI_BLACK_DISCARD_THRESHOLD}) {{
+                //    discard;  // discard only absolute zero black padding
+                //}}
                 fragColor = c;
-            }
+            }}
             """,
         )
 

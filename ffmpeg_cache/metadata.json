@@ -1,0 +1,69 @@
+{
+  "version": "1.0",
+  "entries": {
+    "f03a3a7dfc48d462": {
+      "type": "clip",
+      "input_path": "/Users/markpinnuck/Dev/GitHub/SlideShowBuilder/data/slides/IMG_3087.JPG",
+      "params": {
+        "operation": "photo_slide_render",
+        "duration": 3.0,
+        "fps": 30,
+        "resolution": [
+          1920,
+          1080
+        ],
+        "format": "mp4",
+        "video_quality": "maximum"
+      },
+      "created": 1759988355.6144063,
+      "last_accessed": 1759988355.6144063,
+      "size": 265057
+    },
+    "75a8cd6d7705a5b5": {
+      "type": "clip",
+      "input_path": "/Users/markpinnuck/Dev/GitHub/SlideShowBuilder/data/slides/IMG_3088.JPG",
+      "params": {
+        "operation": "photo_slide_render",
+        "duration": 3.0,
+        "fps": 30,
+        "resolution": [
+          1920,
+          1080
+        ],
+        "format": "mp4",
+        "video_quality": "maximum"
+      },
+      "created": 1759988356.089355,
+      "last_accessed": 1759988356.089355,
+      "size": 404341
+    },
+    "87c978550fe4596e": {
+      "type": "frame",
+      "input_path": "/Users/markpinnuck/Dev/GitHub/SlideShowBuilder/data/output/working/IMG_3087_fc37f32b.mp4",
+      "params": {
+        "operation": "extract_frame",
+        "frame_type": "last",
+        "format": "png"
+      },
+      "created": 1759988356.6783192,
+      "last_accessed": 1759988356.6783192,
+      "size": 1592326
+    },
+    "4830452baf12bf51": {
+      "type": "frame",
+      "input_path": "/Users/markpinnuck/Dev/GitHub/SlideShowBuilder/data/output/working/IMG_3088_fc37f32b.mp4",
+      "params": {
+        "operation": "extract_frame",
+        "frame_type": "last",
+        "format": "png"
+      },
+      "created": 1759988357.0500631,
+      "last_accessed": 1759988357.0500631,
+      "size": 2939093
+    }
+  },
+  "stats": {
+    "hits": 16,
+    "misses": 4
+  }
+}

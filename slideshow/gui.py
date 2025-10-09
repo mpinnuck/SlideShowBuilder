@@ -1933,6 +1933,19 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
         if result:
             try:
                 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+                from pathlib import Path
+                
+                # Configure cache path before clearing
+                # Use the working directory from current project config
+                config = self.parent.model.config if hasattr(self.parent, 'model') else {}
+                output_folder = config.get("output_folder", "")
+                
+                if output_folder:
+                    working_dir = Path(output_folder) / "working"
+                    cache_dir = working_dir / "ffmpeg_cache"
+                    FFmpegCache.configure(cache_dir)
+                
+                # Now clear the cache
                 FFmpegCache.clear_cache()
                 if hasattr(self, 'parent') and hasattr(self.parent, 'log_message'):
                     self.parent.log_message("[FFmpegCache] Cache cleared successfully")

@@ -134,7 +134,8 @@ class Slideshow:
         # Get multislide frequency setting
         multislide_frequency = self.config.get("multislide_frequency", 0)
         
-        media_files = sorted(input_folder.glob("*"))
+        # Sort by file modification time (chronological order) instead of filename
+        media_files = sorted(input_folder.glob("*"), key=lambda p: p.stat().st_mtime)
         skip_until = 0  # Track files consumed by MultiSlides
         
         # Counters for import summary
