@@ -155,14 +155,16 @@ class FFmpegCache:
     def get_cached_clip(cls, input_path: Path, params: Dict[str, Any]) -> Optional[Path]:
         """Check if a cached clip exists for the given input and parameters."""
         if not cls._enabled or not cls._cache_dir:
-            cls._metadata.setdefault("stats", {})["misses"] = cls._metadata["stats"].get("misses", 0) + 1
+            stats = cls._metadata.setdefault("stats", {})
+            stats["misses"] = stats.get("misses", 0) + 1
             return None
             
         cache_key = cls._generate_cache_key(input_path, params)
         
         # Check if entry exists in metadata
         if cache_key not in cls._metadata.get("entries", {}):
-            cls._metadata.setdefault("stats", {})["misses"] = cls._metadata["stats"].get("misses", 0) + 1
+            stats = cls._metadata.setdefault("stats", {})
+            stats["misses"] = stats.get("misses", 0) + 1
             cls._save_metadata()
             return None
             
@@ -171,12 +173,14 @@ class FFmpegCache:
         if not cached_file.exists():
             # Clean up stale metadata entry
             del cls._metadata["entries"][cache_key]
-            cls._metadata.setdefault("stats", {})["misses"] = cls._metadata["stats"].get("misses", 0) + 1
+            stats = cls._metadata.setdefault("stats", {})
+            stats["misses"] = stats.get("misses", 0) + 1
             cls._save_metadata()
             return None
         
         # Cache hit!
-        cls._metadata.setdefault("stats", {})["hits"] = cls._metadata["stats"].get("hits", 0) + 1
+        stats = cls._metadata.setdefault("stats", {})
+        stats["hits"] = stats.get("hits", 0) + 1
         
         # Update access time for the entry
         cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
@@ -219,14 +223,16 @@ class FFmpegCache:
     def get_cached_frame(cls, input_path: Path, params: Dict[str, Any]) -> Optional[Path]:
         """Check if a cached frame exists for the given input and parameters."""
         if not cls._enabled or not cls._cache_dir:
-            cls._metadata.setdefault("stats", {})["misses"] = cls._metadata["stats"].get("misses", 0) + 1
+            stats = cls._metadata.setdefault("stats", {})
+            stats["misses"] = stats.get("misses", 0) + 1
             return None
             
         cache_key = cls._generate_cache_key(input_path, params)
         
         # Check if entry exists in metadata
         if cache_key not in cls._metadata.get("entries", {}):
-            cls._metadata.setdefault("stats", {})["misses"] = cls._metadata["stats"].get("misses", 0) + 1
+            stats = cls._metadata.setdefault("stats", {})
+            stats["misses"] = stats.get("misses", 0) + 1
             cls._save_metadata()
             return None
             
@@ -235,12 +241,14 @@ class FFmpegCache:
         if not cached_file.exists():
             # Clean up stale metadata entry
             del cls._metadata["entries"][cache_key]
-            cls._metadata.setdefault("stats", {})["misses"] = cls._metadata["stats"].get("misses", 0) + 1
+            stats = cls._metadata.setdefault("stats", {})
+            stats["misses"] = stats.get("misses", 0) + 1
             cls._save_metadata()
             return None
         
         # Cache hit!
-        cls._metadata.setdefault("stats", {})["hits"] = cls._metadata["stats"].get("hits", 0) + 1
+        stats = cls._metadata.setdefault("stats", {})
+        stats["hits"] = stats.get("hits", 0) + 1
         
         # Update access time for the entry
         cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
@@ -536,8 +544,9 @@ class FFmpegCache:
         """Reset cache hit/miss statistics. Automatically configures cache if needed."""
         cls.auto_configure()
         
-        cls._metadata.setdefault("stats", {})["hits"] = 0
-        cls._metadata.setdefault("stats", {})["misses"] = 0
+        stats = cls._metadata.setdefault("stats", {})
+        stats["hits"] = 0
+        stats["misses"] = 0
         cls._save_metadata()
     
     @classmethod
