@@ -1,7 +1,7 @@
 from pathlib import Path
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 from slideshow.config import cfg, DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.utils import load_and_resize_image
@@ -58,6 +58,8 @@ class PhotoSlide(SlideItem):
         try:
             # Try PIL first (supports HEIC, JPEG, PNG, etc.)
             with Image.open(self.path) as pil_img:
+                # Apply EXIF orientation correction (fixes upside-down/sideways images)
+                pil_img = ImageOps.exif_transpose(pil_img)
                 # Convert to RGB if needed
                 if pil_img.mode != 'RGB':
                     pil_img = pil_img.convert('RGB')
@@ -111,6 +113,8 @@ class PhotoSlide(SlideItem):
         """Check if the photo is in portrait orientation by examining the image file."""
         try:
             with Image.open(self.path) as img:
+                # Apply EXIF orientation to get correct dimensions
+                img = ImageOps.exif_transpose(img)
                 return img.height > img.width
         except Exception:
             # Fallback: assume landscape if we can't read the image
