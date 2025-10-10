@@ -427,19 +427,24 @@ class MultiSlide(SlideItem):
             if log_callback:
                 log_callback(f"[MultiSlide] All static images - using direct composite...")
             
-            # Convert HEIC to temp PNG if needed
+            # Convert HEIC to temp JPEG if needed (faster than PNG)
             temp_heic_files = []
             input_paths = []
             for path in media_paths:
                 if path.suffix.lower() == '.heic':
-                    temp_png = working_dir / f"temp_heic_{path.stem}_{param_hash}.png"
-                    temp_heic_files.append(temp_png)
+                    temp_jpg = working_dir / f"temp_heic_{path.stem}_{param_hash}.jpg"
+                    temp_heic_files.append(temp_jpg)
                     img = Image.open(path)
                     img = ImageOps.exif_transpose(img)
                     if img.mode != 'RGB':
                         img = img.convert('RGB')
-                    img.save(temp_png, 'PNG')
-                    input_paths.append(temp_png)
+                    # Resize to reasonable size for faster processing (FFmpeg will scale anyway)
+                    # Max dimension 2048 is plenty for compositing
+                    if max(img.size) > 2048:
+                        img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+                    # Save as JPEG with quality 85 (much faster than PNG, still good quality)
+                    img.save(temp_jpg, 'JPEG', quality=85, optimize=False)
+                    input_paths.append(temp_jpg)
                 else:
                     input_paths.append(path)
             
@@ -509,26 +514,29 @@ class MultiSlide(SlideItem):
         # FALLBACK PATH: For videos, create intermediate clips then composite
         # Step 1: Prepare input sources as video clips
         temp_clips = []
-        temp_heic_files = []  # Track HEIC->PNG conversions for cleanup
+        temp_heic_files = []  # Track HEIC->JPEG conversions for cleanup
         try:
             for i, path in enumerate(media_paths):
                 # Create a temporary video clip from this source
                 temp_clip = working_dir / f"temp_source_{i}_{param_hash}.mp4"
                 temp_clips.append(temp_clip)
                 
-                # Handle HEIC files - convert to temp PNG first
+                # Handle HEIC files - convert to temp JPEG first (faster than PNG)
                 input_path = path
                 if path.suffix.lower() == '.heic':
-                    temp_png = working_dir / f"temp_heic_{i}_{param_hash}.png"
-                    temp_heic_files.append(temp_png)
+                    temp_jpg = working_dir / f"temp_heic_{i}_{param_hash}.jpg"
+                    temp_heic_files.append(temp_jpg)
                     
-                    # Convert HEIC to PNG using PIL
+                    # Convert HEIC to JPEG using PIL (faster than PNG)
                     img = Image.open(path)
                     img = ImageOps.exif_transpose(img)
                     if img.mode != 'RGB':
                         img = img.convert('RGB')
-                    img.save(temp_png, 'PNG')
-                    input_path = temp_png
+                    # Resize to reasonable size for faster processing
+                    if max(img.size) > 2048:
+                        img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+                    img.save(temp_jpg, 'JPEG', quality=85, optimize=False)
+                    input_path = temp_jpg
                 
                 if input_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
                     # Convert static image to video clip (fast, low quality for intermediate)
