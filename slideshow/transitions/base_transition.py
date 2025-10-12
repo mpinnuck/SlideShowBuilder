@@ -3,11 +3,7 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 import subprocess
 from .ffmpeg_paths import FFmpegPaths
-
-# slideshow/transitions/base_transition.py
-from pathlib import Path
-from abc import ABC, abstractmethod
-import subprocess
+from .utils import get_video_duration
 from .ffmpeg_paths import FFmpegPaths
 
 class BaseTransition(ABC):
@@ -122,6 +118,27 @@ class BaseTransition(ABC):
     def ensure_output_dir(self, output_path: Path):
         """Ensure output directory exists before writing the transition video."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    def get_metadata(self, index: int, start_time: float, rendered_path: Path):
+        """Generate metadata for this transition."""
+        from slideshow.video_editor import VideoSegment
+        
+        if not rendered_path or not rendered_path.exists():
+            raise RuntimeError(f"Cannot generate metadata: transition not rendered yet ({rendered_path})")
+        
+        duration = get_video_duration(str(rendered_path)) or 0.0
+        
+        return VideoSegment(
+            index=index,
+            type="transition",
+            source_path=None,
+            rendered_path=str(rendered_path.resolve()),
+            duration=duration,
+            start_time=start_time,
+            end_time=start_time + duration,
+            byte_offset=0,
+            byte_size=0
+        )
 
     def __str__(self):
         return f"{self.name} (Duration: {self.duration}s)"

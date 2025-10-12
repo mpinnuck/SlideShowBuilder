@@ -10,12 +10,13 @@ from slideshow.config import cfg
 from slideshow.slides.photo_slide import PhotoSlide
 from slideshow.slides.video_slide import VideoSlide
 from slideshow.transitions import get_transition
-from slideshow.transitions.utils import get_video_duration
+from slideshow.transitions.utils import get_video_duration, add_soundtrack_with_fade
 from slideshow.config import DEFAULT_CONFIG
 from slideshow.transitions.transition_factory import TransitionFactory
 from slideshow.transitions.intro_title import IntroTitle
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
+from slideshow.video_editor import VideoSegment, SlideshowMetadata
 
 
 class Slideshow:
@@ -390,16 +391,51 @@ class Slideshow:
                 self._log("[Slideshow] Cancelling export...")
                 raise RuntimeError("Export cancelled by user")
             
+            # Initialize metadata tracking
+            segments = []
+            current_time = 0.0
+            segment_index = 0
+            
             with self.concat_file.open("w") as f:
                 # Prepend intro clip if it exists
                 if self._intro_clip:
                     f.write(f"file '{self._intro_clip.resolve()}'\n")
+                    # Track intro segment
+                    intro_duration = get_video_duration(str(self._intro_clip)) or 0.0
+                    segments.append(VideoSegment(
+                        index=segment_index,
+                        type="intro",
+                        source_path=None,
+                        rendered_path=str(self._intro_clip.resolve()),
+                        duration=intro_duration,
+                        start_time=current_time,
+                        end_time=current_time + intro_duration,
+                        byte_offset=0,
+                        byte_size=0
+                    ))
+                    current_time += intro_duration
+                    segment_index += 1
 
                 for i, slide in enumerate(self.slides):
-                    f.write(f"file '{slide.get_rendered_clip().resolve()}'\n")
+                    slide_clip = slide.get_rendered_clip()
+                    f.write(f"file '{slide_clip.resolve()}'\n")
+                    
+                    # Get metadata from slide object
+                    segment = slide.get_metadata(segment_index, current_time)
+                    segments.append(segment)
+                    current_time = segment.end_time
+                    segment_index += 1
+                    
                     # Insert transition after every slide except last
                     if i < len(transition_clips):
-                        f.write(f"file '{transition_clips[i].resolve()}'\n")
+                        trans_clip = transition_clips[i]
+                        f.write(f"file '{trans_clip.resolve()}'\n")
+                        
+                        # Get metadata from transition object
+                        segment = self.transition.get_metadata(segment_index, current_time, trans_clip)
+                        segments.append(segment)
+                        current_time = segment.end_time
+                        segment_index += 1
 
             # --- Assemble & mux ---
             expected_duration = self.get_estimated_duration()
@@ -428,57 +464,55 @@ class Slideshow:
             self._log(f"[Slideshow] Video-only duration: {actual_duration:.2f}s" if actual_duration else
                     "[Slideshow] WARNING: could not determine duration — using estimate")
 
-            # --- Pass 2: Mux soundtrack (if present) ---
+            # --- Pass 2: Mux soundtrack (if present) using shared utility ---
             soundtrack_path = self.config.get("soundtrack", "")
             has_soundtrack = bool(soundtrack_path) and Path(soundtrack_path).exists()
 
             self._log("[Slideshow] Muxing soundtrack..." if has_soundtrack else "[Slideshow] Finalizing video (no soundtrack)...")
-            cmd_pass2 = (
-                [
-                    FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", str(self.video_only),
-                    "-stream_loop", "-1", "-i", str(soundtrack_path),
-                    "-map", "0:v", "-map", "1:a",
-                    "-t", f"{actual_duration:.3f}" if actual_duration else "0",
-                    "-c:v", "copy", "-c:a", "aac",
-                    "-movflags", "+faststart", "-progress", "pipe:1",
-                    str(self.mux_no_fade),
-                ]
-                if has_soundtrack
-                else [
-                    FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", str(self.video_only),
-                    "-c", "copy", "-movflags", "+faststart",
-                    "-progress", "pipe:1", str(self.mux_no_fade),
-                ]
+            
+            # Use shared utility function for soundtrack muxing
+            success = add_soundtrack_with_fade(
+                video_only_path=self.video_only,
+                output_path=output_path,
+                soundtrack_path=soundtrack_path if has_soundtrack else None,
+                duration=actual_duration or 1.0,
+                progress_callback=self._log
             )
-            self._run_ffmpeg_progress(cmd_pass2,
-                                    actual_duration or 1.0,
-                                    base_offset=processing_weight + int(assembly_weight * 0.4),
-                                    span_steps=int(assembly_weight * 0.5),
-                                    total_steps=total_weighted_steps)
-
-            # --- Pass 3: Fade audio at end (if soundtrack present & duration known) ---
-            if has_soundtrack and actual_duration and actual_duration > 1.0:
-                self._log(f"[Slideshow] Applying 1s audio fade at {actual_duration-1:.2f}s")
-                fade_filter = f"afade=out:st={actual_duration - 1:.2f}:d=1"
-                cmd_pass3 = [
-                    FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error", "-i", str(self.mux_no_fade),
-                    "-c:v", "copy", "-af", fade_filter,
-                    "-movflags", "+faststart", "-progress", "pipe:1",
-                    str(output_path),
-                ]
-                self._run_ffmpeg_progress(cmd_pass3,
-                                        actual_duration,
-                                        base_offset=processing_weight + int(assembly_weight * 0.9),
-                                        span_steps=int(assembly_weight * 0.1),
-                                        total_steps=total_weighted_steps)
-            else:
-                shutil.copyfile(self.mux_no_fade, output_path)
-                if self.progress_callback:
-                    self.progress_callback(total_weighted_steps, total_weighted_steps)
+            
+            if not success:
+                raise RuntimeError("Failed to add soundtrack to video")
+            
+            # Update progress to completion
+            if self.progress_callback:
+                self.progress_callback(total_weighted_steps, total_weighted_steps)
 
             self._log(f"[Slideshow] Slideshow complete: {output_path}")
+            
+            # Save metadata for video editor
+            try:
+                self._log(f"[Slideshow] Preparing to save metadata: {len(segments)} segments")
+                # Log first 10 segment types to verify interleaving
+                segment_types = [s.type for s in segments[:10]]
+                self._log(f"[Slideshow] First 10 segment types: {segment_types}")
+                
+                metadata = SlideshowMetadata(Path(output_path))
+                metadata.segments = segments
+                metadata.total_duration = current_time
+                metadata.soundtrack_path = soundtrack_path if has_soundtrack else None
+                metadata.save()
+                self._log(f"[Slideshow] ✓ Metadata saved: {metadata.metadata_path} ({len(segments)} segments, {current_time:.2f}s)")
+                
+                # Verify file was written
+                if metadata.metadata_path.exists():
+                    file_size = metadata.metadata_path.stat().st_size
+                    self._log(f"[Slideshow] ✓ Metadata file verified: {file_size} bytes")
+                else:
+                    self._log(f"[Slideshow] ✗ WARNING: Metadata file not found after save!")
+                    
+            except Exception as e:
+                self._log(f"[Slideshow] ✗ ERROR: Failed to save metadata: {e}")
+                import traceback
+                traceback.print_exc()
             
             # Display cache statistics
             cache_stats = FFmpegCache.get_cache_stats()

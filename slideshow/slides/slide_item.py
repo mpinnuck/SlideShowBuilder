@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from PIL import Image
 from typing import Optional
-from slideshow.transitions.utils import extract_frame, load_and_resize_image
+from slideshow.transitions.utils import extract_frame, load_and_resize_image, get_video_duration
 
 
 class SlideItem(ABC):
@@ -48,6 +48,28 @@ class SlideItem(ABC):
         if self._from_image is None:
             self._from_image = self._load_image(From=True)
         return self._from_image
+    
+    def get_metadata(self, index: int, start_time: float):
+        """Generate metadata for this slide."""
+        from slideshow.video_editor import VideoSegment
+        
+        if not self._rendered_clip:
+            raise RuntimeError(f"Cannot generate metadata: slide not rendered yet ({self.path.name})")
+        
+        duration = get_video_duration(str(self._rendered_clip)) or 0.0
+        slide_type = "multi_slide" if "multi_" in self._rendered_clip.name else "slide"
+        
+        return VideoSegment(
+            index=index,
+            type=slide_type,
+            source_path=str(self.path),
+            rendered_path=str(self._rendered_clip.resolve()),
+            duration=duration,
+            start_time=start_time,
+            end_time=start_time + duration,
+            byte_offset=0,
+            byte_size=0
+        )
 
     def get_rendered_clip(self) -> Optional[Path]:
         """Return the path to the rendered clip (if render() has been called)."""

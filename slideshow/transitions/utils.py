@@ -127,3 +127,129 @@ def save_frames_as_video(frames, output_path, fps=25):
             str(output_path)
         ])
         subprocess.run(cmd, check=True, capture_output=True)  # Suppress verbose output
+
+
+def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, duration, progress_callback=None):
+    """
+    Add soundtrack to a video-only file with looping and fade-out.
+    
+    This is the standard workflow used by both:
+    - SlideShowModel during initial video creation
+    - VideoEditor when applying edits
+    
+    Process:
+    1. If soundtrack exists: Loop it to match video duration, trim to exact length
+    2. Apply 1-second fade-out at the end
+    3. If no soundtrack: Just copy the video
+    
+    Args:
+        video_only_path: Path to video file without audio
+        output_path: Path for final output with audio
+        soundtrack_path: Path to audio file (or None for video-only output)
+        duration: Target duration in seconds
+        progress_callback: Optional callback for progress messages
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if progress_callback:
+        progress_callback(f"Adding soundtrack to video ({duration:.1f}s)...")
+    
+    has_soundtrack = bool(soundtrack_path) and Path(soundtrack_path).exists()
+    
+    if not has_soundtrack:
+        # No soundtrack - just copy the video
+        if progress_callback:
+            progress_callback("No soundtrack - copying video...")
+        import shutil
+        shutil.copyfile(video_only_path, output_path)
+        return True
+    
+    # Step 1: Mux soundtrack (looped to match duration)
+    temp_mux_no_fade = Path(output_path).parent / f"temp_mux_no_fade_{Path(output_path).stem}.mp4"
+    
+    if progress_callback:
+        progress_callback("Muxing soundtrack (looped)...")
+    
+    mux_cmd = [
+        FFmpegPaths.ffmpeg(), "-y",
+        "-hide_banner", "-loglevel", "error",
+        "-i", str(video_only_path),
+        "-stream_loop", "-1",  # Loop audio indefinitely
+        "-i", str(soundtrack_path),
+        "-map", "0:v",  # Video from first input
+        "-map", "1:a",  # Audio from second input
+        "-t", f"{duration:.3f}",  # Trim to exact duration
+        "-c:v", "copy",  # Copy video (no re-encode)
+        "-c:a", "aac",  # Encode audio
+        "-b:a", "192k",  # High quality audio
+        "-movflags", "+faststart",  # Web-friendly
+        str(temp_mux_no_fade)
+    ]
+    
+    result = subprocess.run(mux_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        if progress_callback:
+            progress_callback(f"Error muxing soundtrack: {result.stderr}")
+        return False
+    
+    # Step 2: Apply 1-second fade-out at the end (if duration > 1s)
+    if duration > 1.0:
+        if progress_callback:
+            progress_callback(f"Applying audio fade-out at {duration-1:.1f}s...")
+        
+        fade_start = duration - 1.0
+        fade_filter = f"afade=out:st={fade_start:.2f}:d=1"
+        
+        fade_cmd = [
+            FFmpegPaths.ffmpeg(), "-y",
+            "-hide_banner", "-loglevel", "error",
+            "-i", str(temp_mux_no_fade),
+            "-c:v", "copy",  # Copy video
+            "-af", fade_filter,  # Apply audio fade
+            "-movflags", "+faststart",
+            str(output_path)
+        ]
+        
+        result = subprocess.run(fade_cmd, capture_output=True, text=True)
+        
+        # Cleanup temp file
+        if temp_mux_no_fade.exists():
+            temp_mux_no_fade.unlink()
+        
+        if result.returncode != 0:
+            if progress_callback:
+                progress_callback(f"Error applying fade: {result.stderr}")
+            return False
+    else:
+        # Duration too short for fade, just rename temp file
+        import shutil
+        shutil.move(str(temp_mux_no_fade), str(output_path))
+    
+    if progress_callback:
+        progress_callback("Soundtrack added successfully!")
+    
+    return True
+
+
+def extract_audio_from_video(video_path, output_audio_path):
+    """
+    Extract audio track from a video file.
+    
+    Args:
+        video_path: Source video file
+        output_audio_path: Destination for extracted audio
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    cmd = [
+        FFmpegPaths.ffmpeg(), "-y",
+        "-i", str(video_path),
+        "-vn",  # No video
+        "-acodec", "copy",  # Copy audio codec
+        str(output_audio_path)
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.returncode == 0
