@@ -1728,13 +1728,9 @@ class SettingsDialog:
         ttk.Separator(scrollable_frame, orient="horizontal").grid(row=7, column=0, columnspan=2, sticky="ew", pady=20)
         ttk.Label(scrollable_frame, text="Cleanup:", font=("Arial", 12, "bold")).grid(row=8, column=0, sticky="w", pady=(0, 10))
         
-        self.auto_cleanup_var = tk.BooleanVar(value=self.config_data.get("auto_cleanup", True))
-        ttk.Checkbutton(scrollable_frame, text="Automatically clean up temporary files", 
-                       variable=self.auto_cleanup_var).grid(row=9, column=0, columnspan=2, sticky="w")
-        
         self.keep_frames_var = tk.BooleanVar(value=self.config_data.get("keep_intermediate_frames", False))
-        ttk.Checkbutton(scrollable_frame, text="Keep intermediate frames for debugging", 
-                       variable=self.keep_frames_var).grid(row=10, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(scrollable_frame, text="Keep intermediate frames for debugging (required for video editor)", 
+                       variable=self.keep_frames_var).grid(row=9, column=0, columnspan=2, sticky="w")
         
         # FFmpeg Cache Settings
         ttk.Separator(scrollable_frame, orient="horizontal").grid(row=11, column=0, columnspan=2, sticky="ew", pady=20)
@@ -2333,7 +2329,6 @@ Parameters:
         self.config_data["fps"] = self.fps_var.get()
         self.config_data["hardware_acceleration"] = self.hw_accel_var.get()
         self.config_data["temp_directory"] = self.temp_dir_var.get()
-        self.config_data["auto_cleanup"] = self.auto_cleanup_var.get()
         self.config_data["keep_intermediate_frames"] = self.keep_frames_var.get()
         
         # FFmpeg cache settings

@@ -33,7 +33,11 @@ class Slideshow:
         # Use config output folder instead of hardcoded path
         output_folder = Path(self.config.get("output_folder", "media/output"))
         self.working_dir = output_folder / "working"
-        if self.working_dir.exists():
+        
+        # Check if we should clean the working directory on startup
+        keep_intermediate = self.config.get("keep_intermediate_frames", False)
+        
+        if self.working_dir.exists() and not keep_intermediate:
             self._log(f"[Slideshow] Cleaning existing working dir: {self.working_dir}")
             try:
                 # Clean everything except ffmpeg_cache directory
@@ -45,6 +49,9 @@ class Slideshow:
                             item.unlink()
             except Exception as e:
                 self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
+        elif self.working_dir.exists():
+            self._log(f"[Slideshow] Preserving existing working dir (keep_intermediate_frames enabled)")
+        
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
         self.concat_file = self.working_dir / "concat.txt"
@@ -491,7 +498,10 @@ class Slideshow:
                              f"{cache_stats['total_size_mb']:.1f} MB (no usage data yet)")
 
         finally:
-            if self.working_dir.exists():
+            # Check config before cleaning up
+            keep_intermediate = self.config.get("keep_intermediate_frames", False)
+            
+            if self.working_dir.exists() and not keep_intermediate:
                 self._log(f"[Slideshow] Cleaning working dir: {self.working_dir}")
                 # Clean everything except ffmpeg_cache directory
                 try:
@@ -503,6 +513,8 @@ class Slideshow:
                                 item.unlink(missing_ok=True)
                 except Exception as e:
                     self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
+            elif self.working_dir.exists():
+                self._log(f"[Slideshow] Preserving working dir (keep_intermediate_frames enabled)")
     
     # -------------------------------
     # Cache Management
