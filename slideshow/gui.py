@@ -238,9 +238,7 @@ class GUI(tk.Tk):
         self.export_button = ttk.Button(self.button_frame, text="Export Video", command=self.export_video)
         self.export_button.pack(side=tk.LEFT, padx=(0, 3))
         self.play_button = ttk.Button(self.button_frame, text="Play Slideshow", command=self.play_slideshow)
-        self.play_button.pack(side=tk.LEFT, padx=(0, 3))
-        self.edit_video_button = ttk.Button(self.button_frame, text="Edit Video", command=self.open_video_editor)
-        self.edit_video_button.pack(side=tk.LEFT, padx=(0, 6))  # Double spacing before next section
+        self.play_button.pack(side=tk.LEFT, padx=(0, 6))  # Double spacing before next section
         ttk.Button(self.button_frame, text="Preview & Rotate Images", command=self.open_image_rotator).pack(side=tk.LEFT, padx=(0, 3))
         ttk.Button(self.button_frame, text="Settings", command=self.open_settings).pack(side=tk.LEFT, padx=(0, 3))
         ttk.Button(self.button_frame, text="Save Config", command=self.save_config).pack(side=tk.LEFT, padx=(0, 3))
@@ -936,36 +934,6 @@ class GUI(tk.Tk):
                     self.log_message(f"All methods failed: {e2}")
         else:
             self.log_message(f"Slideshow not found: {output_path}. Please export the slideshow first.")
-    
-    def open_video_editor(self):
-        """Open the video editor dialog"""
-        from slideshow.video_editor_gui import open_video_editor
-        
-        # Get the expected output path from current config
-        current_config = self._get_current_config()
-        output_path = Path(current_config["output_folder"]) / f"{current_config['project_name']}.mp4"
-        
-        if not output_path.exists():
-            messagebox.showwarning(
-                "Video Not Found",
-                f"Video file not found:\n{output_path}\n\n"
-                "Please export the slideshow first."
-            )
-            return
-        
-        # Check if metadata exists
-        metadata_path = Path(str(output_path).rsplit('.', 1)[0] + '.metadata.json')
-        if not metadata_path.exists():
-            messagebox.showwarning(
-                "Metadata Not Found",
-                f"Metadata file not found:\n{metadata_path}\n\n"
-                "Please make sure 'Keep intermediate frames for debugging' is enabled in Settings, "
-                "then re-export the slideshow."
-            )
-            return
-        
-        self.log_message(f"Opening video editor for: {output_path.name}")
-        open_video_editor(self, str(output_path))
     
     def _on_progress(self, current, total):
         """Thread-safe progress update callback"""

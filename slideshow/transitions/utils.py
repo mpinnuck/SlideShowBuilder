@@ -165,11 +165,12 @@ def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, dura
         shutil.copyfile(video_only_path, output_path)
         return True
     
-    # Step 1: Mux soundtrack (looped to match duration)
-    temp_mux_no_fade = Path(output_path).parent / f"temp_mux_no_fade_{Path(output_path).stem}.mp4"
-    
+    # Step 1: Mux soundtrack (looped) and apply fade in ONE pass
     if progress_callback:
-        progress_callback("Muxing soundtrack (looped)...")
+        progress_callback("Muxing soundtrack (looped) with fade...")
+    
+    # Build audio filter: fade out in last second (if duration > 1s)
+    audio_filter = f"afade=out:st={duration-1:.2f}:d=1" if duration > 1.0 else None
     
     mux_cmd = [
         FFmpegPaths.ffmpeg(), "-y",
@@ -183,48 +184,21 @@ def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, dura
         "-c:v", "copy",  # Copy video (no re-encode)
         "-c:a", "aac",  # Encode audio
         "-b:a", "192k",  # High quality audio
-        "-movflags", "+faststart",  # Web-friendly
-        str(temp_mux_no_fade)
     ]
+    
+    if audio_filter:
+        mux_cmd.extend(["-af", audio_filter])  # Apply fade filter
+    
+    mux_cmd.extend([
+        "-movflags", "+faststart",  # Web-friendly
+        str(output_path)
+    ])
     
     result = subprocess.run(mux_cmd, capture_output=True, text=True)
     if result.returncode != 0:
         if progress_callback:
             progress_callback(f"Error muxing soundtrack: {result.stderr}")
         return False
-    
-    # Step 2: Apply 1-second fade-out at the end (if duration > 1s)
-    if duration > 1.0:
-        if progress_callback:
-            progress_callback(f"Applying audio fade-out at {duration-1:.1f}s...")
-        
-        fade_start = duration - 1.0
-        fade_filter = f"afade=out:st={fade_start:.2f}:d=1"
-        
-        fade_cmd = [
-            FFmpegPaths.ffmpeg(), "-y",
-            "-hide_banner", "-loglevel", "error",
-            "-i", str(temp_mux_no_fade),
-            "-c:v", "copy",  # Copy video
-            "-af", fade_filter,  # Apply audio fade
-            "-movflags", "+faststart",
-            str(output_path)
-        ]
-        
-        result = subprocess.run(fade_cmd, capture_output=True, text=True)
-        
-        # Cleanup temp file
-        if temp_mux_no_fade.exists():
-            temp_mux_no_fade.unlink()
-        
-        if result.returncode != 0:
-            if progress_callback:
-                progress_callback(f"Error applying fade: {result.stderr}")
-            return False
-    else:
-        # Duration too short for fade, just rename temp file
-        import shutil
-        shutil.move(str(temp_mux_no_fade), str(output_path))
     
     if progress_callback:
         progress_callback("Soundtrack added successfully!")

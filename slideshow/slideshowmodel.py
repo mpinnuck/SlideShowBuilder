@@ -16,7 +16,6 @@ from slideshow.transitions.transition_factory import TransitionFactory
 from slideshow.transitions.intro_title import IntroTitle
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
-from slideshow.video_editor import VideoSegment, SlideshowMetadata
 
 
 class Slideshow:
@@ -234,18 +233,22 @@ class Slideshow:
                     self.slides.append(VideoSlide(path, actual_duration, fps=fps, resolution=resolution))
                     video_count += 1
                 else:
-                    final_duration = actual_duration if i == len(media_files) - 1 else min(video_duration_setting, actual_duration)
-                    if i == len(media_files) - 1:
-                        self._log(f"[Slideshow] Last slide {path.name}: forcing full duration {final_duration:.2f}s")
+                    # Force last video to play full duration for a natural, complete ending
+                    # Other videos are limited to video_duration_setting to maintain consistent pacing
+                    is_last_file = (i == len(media_files) - 1)
+                    final_duration = actual_duration if is_last_file else min(video_duration_setting, actual_duration)
+                    
+                    # Track last slide info for logging after import summary
+                    if is_last_file:
+                        last_slide_path = path
+                        last_slide_duration = final_duration
+                    
                     self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution))
                     video_count += 1
             
-            # Show progress every 10 files (overwriting the same line)
+            # Show progress every 10 files
             if (i + 1) % 10 == 0 or (i + 1) == total_files:
                 self._log(f"[Slideshow] Loaded {i + 1}/{total_files} files...\r")
-        
-        # Final newline after progress updates
-#        self._log("")
         
         # Log import summary
         total_input_files = len(media_files)
@@ -253,6 +256,10 @@ class Slideshow:
         single_photo_slides = (photo_count - (multislide_count * 3))  # Photos not in MultiSlides
         
         self._log(f"[Slideshow] Importing {total_input_files} files → {total_slides} slides: {single_photo_slides} photo, {video_count} video, {multislide_count} multi")
+        
+        # Log last slide info if it was a video with full duration
+        if last_slide_path and last_slide_duration:
+            self._log(f"[Slideshow] Last slide {last_slide_path.name}: forcing full duration {last_slide_duration:.2f}s")
         
         # Removed self.update_transitions() from here to decouple transitions from slide loading
         # Transitions should be updated explicitly when needed, such as during export or transition type change.
@@ -391,51 +398,21 @@ class Slideshow:
                 self._log("[Slideshow] Cancelling export...")
                 raise RuntimeError("Export cancelled by user")
             
-            # Initialize metadata tracking
-            segments = []
-            current_time = 0.0
-            segment_index = 0
+            self._log("[Slideshow] Building concat file...")
             
             with self.concat_file.open("w") as f:
                 # Prepend intro clip if it exists
                 if self._intro_clip:
                     f.write(f"file '{self._intro_clip.resolve()}'\n")
-                    # Track intro segment
-                    intro_duration = get_video_duration(str(self._intro_clip)) or 0.0
-                    segments.append(VideoSegment(
-                        index=segment_index,
-                        type="intro",
-                        source_path=None,
-                        rendered_path=str(self._intro_clip.resolve()),
-                        duration=intro_duration,
-                        start_time=current_time,
-                        end_time=current_time + intro_duration,
-                        byte_offset=0,
-                        byte_size=0
-                    ))
-                    current_time += intro_duration
-                    segment_index += 1
 
                 for i, slide in enumerate(self.slides):
                     slide_clip = slide.get_rendered_clip()
                     f.write(f"file '{slide_clip.resolve()}'\n")
                     
-                    # Get metadata from slide object
-                    segment = slide.get_metadata(segment_index, current_time)
-                    segments.append(segment)
-                    current_time = segment.end_time
-                    segment_index += 1
-                    
                     # Insert transition after every slide except last
                     if i < len(transition_clips):
                         trans_clip = transition_clips[i]
                         f.write(f"file '{trans_clip.resolve()}'\n")
-                        
-                        # Get metadata from transition object
-                        segment = self.transition.get_metadata(segment_index, current_time, trans_clip)
-                        segments.append(segment)
-                        current_time = segment.end_time
-                        segment_index += 1
 
             # --- Assemble & mux ---
             expected_duration = self.get_estimated_duration()
@@ -446,14 +423,10 @@ class Slideshow:
             cmd_pass1 = [
                 FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
-            ]
-            cmd_pass1.extend(cfg.get_ffmpeg_encoding_params())  # Use project quality settings
-            cmd_pass1.extend([
-                "-pix_fmt", "yuv420p",     # Standard pixel format for compatibility
-                "-movflags", "+faststart", # Fast start for better playback
+                "-c", "copy",  # Stream copy - no re-encode! Clips already at correct quality
                 "-progress", "pipe:1",
                 str(self.video_only),
-            ])
+            ]
             self._run_ffmpeg_progress(cmd_pass1,
                                     expected_duration or 1.0,
                                     base_offset=processing_weight,
@@ -487,32 +460,6 @@ class Slideshow:
                 self.progress_callback(total_weighted_steps, total_weighted_steps)
 
             self._log(f"[Slideshow] Slideshow complete: {output_path}")
-            
-            # Save metadata for video editor
-            try:
-                self._log(f"[Slideshow] Preparing to save metadata: {len(segments)} segments")
-                # Log first 10 segment types to verify interleaving
-                segment_types = [s.type for s in segments[:10]]
-                self._log(f"[Slideshow] First 10 segment types: {segment_types}")
-                
-                metadata = SlideshowMetadata(Path(output_path))
-                metadata.segments = segments
-                metadata.total_duration = current_time
-                metadata.soundtrack_path = soundtrack_path if has_soundtrack else None
-                metadata.save()
-                self._log(f"[Slideshow] ✓ Metadata saved: {metadata.metadata_path} ({len(segments)} segments, {current_time:.2f}s)")
-                
-                # Verify file was written
-                if metadata.metadata_path.exists():
-                    file_size = metadata.metadata_path.stat().st_size
-                    self._log(f"[Slideshow] ✓ Metadata file verified: {file_size} bytes")
-                else:
-                    self._log(f"[Slideshow] ✗ WARNING: Metadata file not found after save!")
-                    
-            except Exception as e:
-                self._log(f"[Slideshow] ✗ ERROR: Failed to save metadata: {e}")
-                import traceback
-                traceback.print_exc()
             
             # Display cache statistics
             cache_stats = FFmpegCache.get_cache_stats()
