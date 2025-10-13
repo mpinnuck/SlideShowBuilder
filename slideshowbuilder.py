@@ -18,7 +18,7 @@ try:
 except ImportError:
     pass  # pillow-heif not installed, HEIC files won't be supported
 
-VERSION = "9.4.0"
+VERSION = "9.4.2"
 
 if __name__ == "__main__":
     # Bring app to foreground on macOS (fail silently if error)

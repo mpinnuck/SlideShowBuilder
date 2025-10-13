@@ -991,7 +991,7 @@ class GUI(tk.Tk):
             
             # Success
             if output_path:
-                self.after(0, lambda: self.log_message(f"[GUI] Slideshow successfully exported → {output_path}"))
+                # self.after(0, lambda: self.log_message(f"[GUI] Slideshow successfully exported → {output_path}"))
                 self.after(0, lambda: self.update_progress(100, 100))
                 # Brief pause to show 100% completion
                 import time

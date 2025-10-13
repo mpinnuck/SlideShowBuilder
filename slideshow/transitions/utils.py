@@ -152,8 +152,8 @@ def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, dura
     Returns:
         True if successful, False otherwise
     """
-    if progress_callback:
-        progress_callback(f"Adding soundtrack to video ({duration:.1f}s)...")
+    # if progress_callback:
+    #     progress_callback(f"Adding soundtrack to video ({duration:.1f}s)...")
     
     has_soundtrack = bool(soundtrack_path) and Path(soundtrack_path).exists()
     
@@ -166,8 +166,8 @@ def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, dura
         return True
     
     # Step 1: Mux soundtrack (looped) and apply fade in ONE pass
-    if progress_callback:
-        progress_callback("Muxing soundtrack (looped) with fade...")
+    # if progress_callback:
+    #     progress_callback("Muxing soundtrack (looped) with fade...")
     
     # Build audio filter: fade out in last second (if duration > 1s)
     audio_filter = f"afade=out:st={duration-1:.2f}:d=1" if duration > 1.0 else None
@@ -200,8 +200,8 @@ def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, dura
             progress_callback(f"Error muxing soundtrack: {result.stderr}")
         return False
     
-    if progress_callback:
-        progress_callback("Soundtrack added successfully!")
+    # if progress_callback:
+    #     progress_callback("Soundtrack added successfully!")
     
     return True
 

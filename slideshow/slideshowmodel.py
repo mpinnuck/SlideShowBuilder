@@ -421,7 +421,7 @@ class Slideshow:
             self._run_ffmpeg_progress(cmd_pass1,
                                     expected_duration or 1.0,
                                     base_offset=processing_weight,
-                                    span_steps=int(assembly_weight * 0.4),
+                                    span_steps=int(assembly_weight * 0.9),
                                     total_steps=total_weighted_steps)
 
             actual_duration = self.get_file_duration(self.video_only)
@@ -453,21 +453,21 @@ class Slideshow:
             self._log(f"[Slideshow] Slideshow complete: {output_path}")
             
             # Display cache statistics
-            cache_stats = FFmpegCache.get_cache_stats()
-            if cache_stats.get("enabled", False):
-                hit_rate = cache_stats.get("hit_rate_percent", 0)
-                total_requests = cache_stats.get("total_requests", 0)
-                
-                if total_requests > 0:
-                    self._log(f"[FFmpegCache] Cache stats: {cache_stats['total_entries']} entries "
-                             f"({cache_stats['clip_count']} clips, {cache_stats['frame_count']} frames), "
-                             f"{cache_stats['total_size_mb']:.1f} MB")
-                    self._log(f"[FFmpegCache] Performance: {cache_stats['cache_hits']} hits, "
-                             f"{cache_stats['cache_misses']} misses, {hit_rate}% hit rate")
-                else:
-                    self._log(f"[FFmpegCache] Cache stats: {cache_stats['total_entries']} entries "
-                             f"({cache_stats['clip_count']} clips, {cache_stats['frame_count']} frames), "
-                             f"{cache_stats['total_size_mb']:.1f} MB (no usage data yet)")
+            # cache_stats = FFmpegCache.get_cache_stats()
+            # if cache_stats.get("enabled", False):
+            #     hit_rate = cache_stats.get("hit_rate_percent", 0)
+            #     total_requests = cache_stats.get("total_requests", 0)
+            #     
+            #     if total_requests > 0:
+            #         self._log(f"[FFmpegCache] Cache stats: {cache_stats['total_entries']} entries "
+            #                  f"({cache_stats['clip_count']} clips, {cache_stats['frame_count']} frames), "
+            #                  f"{cache_stats['total_size_mb']:.1f} MB")
+            #         self._log(f"[FFmpegCache] Performance: {cache_stats['cache_hits']} hits, "
+            #                  f"{cache_stats['cache_misses']} misses, {hit_rate}% hit rate")
+            #     else:
+            #         self._log(f"[FFmpegCache] Cache stats: {cache_stats['total_entries']} entries "
+            #                  f"({cache_stats['clip_count']} clips, {cache_stats['frame_count']} frames), "
+            #                  f"{cache_stats['total_size_mb']:.1f} MB (no usage data yet)")
 
         finally:
             # Check config before cleaning up
@@ -485,8 +485,8 @@ class Slideshow:
                                 item.unlink(missing_ok=True)
                 except Exception as e:
                     self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
-            elif self.working_dir.exists():
-                self._log(f"[Slideshow] Preserving working dir (keep_intermediate_frames enabled)")
+            # elif self.working_dir.exists():
+            #     self._log(f"[Slideshow] Preserving working dir (keep_intermediate_frames enabled)")
     
     # -------------------------------
     # Cache Management
