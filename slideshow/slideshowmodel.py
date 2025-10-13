@@ -238,11 +238,6 @@ class Slideshow:
                     is_last_file = (i == len(media_files) - 1)
                     final_duration = actual_duration if is_last_file else min(video_duration_setting, actual_duration)
                     
-                    # Track last slide info for logging after import summary
-                    if is_last_file:
-                        last_slide_path = path
-                        last_slide_duration = final_duration
-                    
                     self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution))
                     video_count += 1
             
@@ -256,10 +251,6 @@ class Slideshow:
         single_photo_slides = (photo_count - (multislide_count * 3))  # Photos not in MultiSlides
         
         self._log(f"[Slideshow] Importing {total_input_files} files → {total_slides} slides: {single_photo_slides} photo, {video_count} video, {multislide_count} multi")
-        
-        # Log last slide info if it was a video with full duration
-        if last_slide_path and last_slide_duration:
-            self._log(f"[Slideshow] Last slide {last_slide_path.name}: forcing full duration {last_slide_duration:.2f}s")
         
         # Removed self.update_transitions() from here to decouple transitions from slide loading
         # Transitions should be updated explicitly when needed, such as during export or transition type change.
