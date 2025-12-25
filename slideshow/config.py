@@ -29,21 +29,22 @@ class Config:
     """
     
     # Class constants
-    APP_SETTINGS_DIR = Path.home() / "SlideshowBuilder"
+    APP_SETTINGS_DIR = Path.home() / "SlideShowBuilder"
     APP_SETTINGS_FILE = APP_SETTINGS_DIR / "slideshow_settings.json"
     PROJECT_CONFIG_FILE = "slideshow_config.json"
     
     # Default app-level settings
     DEFAULT_APP_SETTINGS = {
         "last_project_path": "",
-        "project_history": []  # List of recent project names, newest first (max 10)
+        "project_history": [],  # List of recent projects {"name": str, "path": str}, newest first (max 10)
+        "slideshows_base_dir": str(Path.home() / "SlideShowBuilder")  # Base directory for slideshows
     }
     
     # Default project-level settings
     DEFAULT_CONFIG = {
         "project_name": "MyProject",
-        "input_folder": str(Path.home() / "SlideshowBuilder" / "MyProject" / "Slides"),
-        "output_folder": str(Path.home() / "SlideshowBuilder" / "MyProject" / "Output"),
+        "input_folder": str(APP_SETTINGS_DIR / "MyProject" / "Slides"),
+        "output_folder": str(APP_SETTINGS_DIR / "MyProject" / "Output"),
         "photo_duration": 3.0,
         "video_duration": 5.0,
         "transition_duration": 1.0,
@@ -187,12 +188,14 @@ class Config:
         config_path = self._get_project_config_path(output_folder)
         is_new_folder = not config_path.parent.exists()
         
-        # Ensure output folder exists
+        # Ensure project folder exists
         config_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Create ffmpeg_cache structure for new folders
+        # Create output folder and cache structure for new folders
         if is_new_folder:
-            cache_dir = config_path.parent / "working" / "ffmpeg_cache"
+            output_path = Path(output_folder)
+            output_path.mkdir(parents=True, exist_ok=True)
+            cache_dir = output_path / "working" / "ffmpeg_cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
             print(f"[Config] Created project folder structure with cache at: {cache_dir}")
         
@@ -216,14 +219,16 @@ class Config:
         """Get the path to the project config file."""
         if not output_folder:
             return Path(self.PROJECT_CONFIG_FILE)
-        return Path(output_folder) / self.PROJECT_CONFIG_FILE
+        # Config file is in the parent folder (project folder), not the output folder
+        project_folder = Path(output_folder).parent
+        return project_folder / self.PROJECT_CONFIG_FILE
     
     # =================================================================
     # App Settings Methods (project history, last project)
     # =================================================================
     
     def load_app_settings(self) -> dict:
-        """Load global app settings from ~/SlideshowBuilder/slideshow_settings.json"""
+        """Load global app settings from ~/SlideShowBuilder/slideshow_settings.json"""
         settings = self.DEFAULT_APP_SETTINGS.copy()
         
         if self.APP_SETTINGS_FILE.exists():
@@ -238,7 +243,7 @@ class Config:
         return settings
     
     def save_app_settings(self, settings: dict):
-        """Save global app settings to ~/SlideshowBuilder/slideshow_settings.json"""
+        """Save global app settings to ~/SlideShowBuilder/slideshow_settings.json"""
         self.APP_SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
         
         merged = self.DEFAULT_APP_SETTINGS.copy()
@@ -250,8 +255,13 @@ class Config:
         except OSError as e:
             print(f"[Config] WARNING: Failed to save app settings ({e})")
     
-    def add_to_project_history(self, project_name: str):
-        """Add project to history (most recent first, max 10)."""
+    def add_to_project_history(self, project_name: str, project_path: str = None):
+        """Add project to history (most recent first, max 10).
+        
+        Args:
+            project_name: Name of the project
+            project_path: Optional path to the project folder. If not provided, assumes ~/SlideShowBuilder/
+        """
         if not project_name or not project_name.strip():
             return
         
@@ -262,27 +272,72 @@ class Config:
         if not isinstance(history, list):
             history = []
         
+        # Normalize history entries - convert old string format to dict format
+        normalized_history = []
+        for entry in history:
+            if isinstance(entry, str):
+                # Old format: just a string name, assume default path
+                normalized_history.append({"name": entry, "path": ""})
+            elif isinstance(entry, dict) and "name" in entry:
+                # New format: dict with name and path
+                normalized_history.append(entry)
+        
+        # Determine project path
+        if project_path is None:
+            project_path = ""  # Empty means default ~/SlideShowBuilder/
+        
         # Remove if already exists (to move to top)
-        history = [name for name in history if name != project_name]
+        normalized_history = [
+            entry for entry in normalized_history 
+            if entry["name"] != project_name
+        ]
         
         # Add to front
-        history.insert(0, project_name)
+        normalized_history.insert(0, {"name": project_name, "path": project_path})
         
         # Keep only last 10
-        history = history[:10]
+        normalized_history = normalized_history[:10]
         
-        settings["project_history"] = history
+        settings["project_history"] = normalized_history
         self.save_app_settings(settings)
     
     def get_project_history(self) -> list:
-        """Get list of recent project names (strings only)."""
+        """Get list of recent projects as dicts with 'name' and 'path' keys.
+        
+        Returns:
+            List of dicts: [{"name": "ProjectName", "path": "/path/to/project"}, ...]
+            Path may be empty string if using default ~/SlideShowBuilder/ location
+        """
         settings = self.load_app_settings()
         history = settings.get("project_history", [])
         
         if not isinstance(history, list):
             return []
         
-        return [name for name in history if isinstance(name, str) and name.strip()]
+        # Normalize history entries - convert old string format to dict format
+        normalized = []
+        for entry in history:
+            if isinstance(entry, str):
+                # Old format: just a string name, assume default path
+                normalized.append({"name": entry, "path": ""})
+            elif isinstance(entry, dict) and "name" in entry:
+                # New format: dict with name and path
+                # Ensure path key exists
+                path = entry.get("path", "")
+                name = entry["name"]
+                if name and name.strip():
+                    normalized.append({"name": name, "path": path})
+        
+        return normalized
+    
+    def get_project_history_names(self) -> list:
+        """Get list of recent project names only (for backward compatibility).
+        
+        Returns:
+            List of project name strings
+        """
+        history = self.get_project_history()
+        return [entry["name"] for entry in history]
     
     # =================================================================
     # FFmpeg Encoding Methods
@@ -365,13 +420,21 @@ def save_app_settings(settings: dict):
     """Backward compatibility wrapper. New code should use Config.instance().save_app_settings()"""
     Config.instance().save_app_settings(settings)
 
-def add_to_project_history(project_name: str):
+def add_to_project_history(project_name: str, project_path: str = None):
     """Backward compatibility wrapper. New code should use Config.instance().add_to_project_history()"""
-    Config.instance().add_to_project_history(project_name)
+    Config.instance().add_to_project_history(project_name, project_path)
 
 def get_project_history() -> list:
-    """Backward compatibility wrapper. New code should use Config.instance().get_project_history()"""
+    """Backward compatibility wrapper. New code should use Config.instance().get_project_history()
+    Returns list of dicts with 'name' and 'path' keys.
+    """
     return Config.instance().get_project_history()
+
+def get_project_history_names() -> list:
+    """Backward compatibility wrapper. New code should use Config.instance().get_project_history_names()
+    Returns list of project name strings only.
+    """
+    return Config.instance().get_project_history_names()
 
 def get_project_config_path(output_folder: str) -> Path:
     """Backward compatibility wrapper. New code should use Config.instance()._get_project_config_path()"""

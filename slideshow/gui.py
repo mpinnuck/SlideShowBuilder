@@ -85,13 +85,14 @@ def sanitize_project_name(name: str) -> str:
 
 def build_project_paths(project_name: str) -> tuple[str, str]:
     """
-    Build full project paths under ~/SlideshowBuilder/ProjectName/
+    Build full project paths under ~/SlideShowBuilder/ProjectName/
     Returns: (input_path, output_path)
     """
     if not project_name:
         return ("", "")
     sanitized = sanitize_project_name(project_name)
-    base_path = Path.home() / "SlideshowBuilder" / sanitized
+    from slideshow.config import Config
+    base_path = Config.APP_SETTINGS_DIR / sanitized
     input_path = str(base_path / "Slides")
     output_path = str(base_path / "Output")
     return (input_path, output_path)
@@ -107,6 +108,9 @@ class GUI(tk.Tk):
     def __init__(self, version="1.0.0"):
         super().__init__()
         self.title(f"Slideshow Builder v{version}")
+        
+        # Load custom slideshows base directory if configured
+        self._load_custom_slideshows_dir()
         
         # Set application icon
         try:
@@ -126,6 +130,34 @@ class GUI(tk.Tk):
         
         # Check initial Play button state
         self._check_play_button_state()
+    
+    def _load_custom_slideshows_dir(self):
+        """Load custom slideshows base directory from app settings"""
+        from slideshow.config import Config
+        import json
+        
+        # First check the default location for settings file
+        default_settings_dir = Path.home() / "SlideShowBuilder"
+        default_settings_file = default_settings_dir / "slideshow_settings.json"
+        
+        custom_dir = str(default_settings_dir)  # Start with default
+        
+        # Try to load settings from default location
+        if default_settings_file.exists():
+            try:
+                with open(default_settings_file, "r") as f:
+                    settings = json.load(f)
+                    custom_dir = settings.get("slideshows_base_dir", str(default_settings_dir))
+            except (json.JSONDecodeError, OSError):
+                pass  # Use default if loading fails
+        
+        # Update the Config class constants with the configured directory
+        # Use expanduser() to handle ~ in paths
+        Config.APP_SETTINGS_DIR = Path(custom_dir).expanduser()
+        Config.APP_SETTINGS_FILE = Config.APP_SETTINGS_DIR / "slideshow_settings.json"
+        
+        # Ensure the directory exists
+        Config.APP_SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
     
     def center_window(self):
             # Set initial size before centering
@@ -156,8 +188,9 @@ class GUI(tk.Tk):
         # Get project history for dropdown
         self.project_history = get_project_history()
         
-        # Use combobox for project name with history
-        self.name_combo = ttk.Combobox(self, textvariable=self.name_var, width=38, values=self.project_history)
+        # Use combobox for project name with history - display names only
+        project_names = [entry["name"] for entry in self.project_history]
+        self.name_combo = ttk.Combobox(self, textvariable=self.name_var, width=38, values=project_names)
         self.name_combo.grid(row=0, column=1, columnspan=2, sticky="we")
         self.name_combo.bind('<FocusIn>', lambda e: self._on_project_name_focus_in())
         self.name_combo.bind('<FocusOut>', lambda e: self._on_project_name_focus_out())
@@ -166,74 +199,81 @@ class GUI(tk.Tk):
         
         # Store the project name when focus is gained
         self._project_name_on_focus = ""
+        
+        # Project Path (read-only display below project name)
+        ttk.Label(self, text="Project Path:").grid(row=1, column=0, sticky="e")
+        self.project_path_var = tk.StringVar(value="")
+        path_label = ttk.Label(self, textvariable=self.project_path_var, foreground="gray")
+        path_label.grid(row=1, column=1, sticky="w", padx=(5, 0))
+        ttk.Button(self, text="Browse", command=self.select_slideshows_folder).grid(row=1, column=2)
 
-        # Input Folder
-        ttk.Label(self, text="Input Folder:").grid(row=1, column=0, sticky="e")
+        # Input Folder (now row 2)
+        ttk.Label(self, text="Input Folder:").grid(row=2, column=0, sticky="e")
         self.input_var = tk.StringVar(value=self.config_data.get("input_folder", ""))
         self.input_var.trace_add('write', lambda *args: self._auto_save_config())
-        ttk.Entry(self, textvariable=self.input_var, width=40).grid(row=1, column=1, sticky="we")
-        ttk.Button(self, text="Browse", command=self.select_input_folder).grid(row=1, column=2)
+        ttk.Entry(self, textvariable=self.input_var, width=40).grid(row=2, column=1, sticky="we")
+        ttk.Button(self, text="Browse", command=self.select_input_folder).grid(row=2, column=2)
 
         # Output Folder
-        ttk.Label(self, text="Output Folder:").grid(row=2, column=0, sticky="e")
+        ttk.Label(self, text="Output Folder:").grid(row=3, column=0, sticky="e")
         self.output_var = tk.StringVar(value=self.config_data.get("output_folder", ""))
         output_entry = ttk.Entry(self, textvariable=self.output_var, width=40)
-        output_entry.grid(row=2, column=1, sticky="we")
+        output_entry.grid(row=3, column=1, sticky="we")
         output_entry.bind('<FocusOut>', lambda e: self._auto_save_config())
         output_entry.bind('<Return>', lambda e: self._auto_save_config())
-        ttk.Button(self, text="Browse", command=self.select_output_folder).grid(row=2, column=2)
+        ttk.Button(self, text="Browse", command=self.select_output_folder).grid(row=3, column=2)
 
         # Soundtrack
-        ttk.Label(self, text="Soundtrack File:").grid(row=3, column=0, sticky="e")
+        ttk.Label(self, text="Soundtrack File:").grid(row=4, column=0, sticky="e")
         self.soundtrack_var = tk.StringVar(value=self.config_data.get("soundtrack", ""))
         self.soundtrack_var.trace_add('write', lambda *args: self._auto_save_config())
-        ttk.Entry(self, textvariable=self.soundtrack_var, width=40).grid(row=3, column=1, sticky="we")
-        ttk.Button(self, text="Browse", command=self.select_soundtrack).grid(row=3, column=2)
+        ttk.Entry(self, textvariable=self.soundtrack_var, width=40).grid(row=4, column=1, sticky="we")
+        ttk.Button(self, text="Browse", command=self.select_soundtrack).grid(row=4, column=2)
 
         # Durations
-        ttk.Label(self, text="Photo Duration (s):").grid(row=4, column=0, sticky="e")
+        ttk.Label(self, text="Photo Duration (s):").grid(row=5, column=0, sticky="e")
         self.photo_dur_var = tk.IntVar(value=self.config_data.get("photo_duration", 3))
         self.photo_dur_var.trace_add('write', lambda *args: self._auto_save_config())
-        ttk.Entry(self, textvariable=self.photo_dur_var, width=5).grid(row=4, column=1, sticky="w", padx=(5, 0))
+        ttk.Entry(self, textvariable=self.photo_dur_var, width=5).grid(row=5, column=1, sticky="w", padx=(5, 0))
 
         # Transition Type (positioned right after Photo Duration in same column area)
-        ttk.Label(self, text="Transition:").grid(row=4, column=1, sticky="w", padx=(80, 5))
+        ttk.Label(self, text="Transition:").grid(row=5, column=1, sticky="w", padx=(80, 5))
         self.transition_var = tk.StringVar(value=self.config_data.get("transition_type", "fade"))
         self.transition_var.trace_add('write', lambda *args: self._auto_save_config())
         # Log the change for manual verification
         self.transition_var.trace_add('write', lambda *args: self.log_message(f"Transition type changed to: {self.transition_var.get()}"))
         self.transition_combo = ttk.Combobox(self, textvariable=self.transition_var, width=12, state="readonly")
-        self.transition_combo.grid(row=4, column=1, sticky="w", padx=(150, 0))
+        self.transition_combo.grid(row=5, column=1, sticky="w", padx=(150, 0))
         self._populate_transitions()
 
-        ttk.Label(self, text="Video Duration (s):").grid(row=5, column=0, sticky="e")
+        ttk.Label(self, text="Video Duration (s):").grid(row=6, column=0, sticky="e")
         self.video_dur_var = tk.IntVar(value=self.config_data.get("video_duration", 10))
         self.video_dur_var.trace_add('write', lambda *args: self._auto_save_config())
-        ttk.Entry(self, textvariable=self.video_dur_var, width=5).grid(row=5, column=1, sticky="w", padx=(5, 0))
+        ttk.Entry(self, textvariable=self.video_dur_var, width=5).grid(row=6, column=1, sticky="w", padx=(5, 0))
 
         # MultiSlide Frequency (positioned right after Video Duration in same column area)
-        ttk.Label(self, text="MultiSlide Freq:").grid(row=5, column=1, sticky="w", padx=(80, 5))
+        ttk.Label(self, text="MultiSlide Freq:").grid(row=6, column=1, sticky="w", padx=(80, 5))
         self.multislide_freq_var = tk.IntVar(value=self.config_data.get("multislide_frequency", 10))
         self.multislide_freq_var.trace_add('write', lambda *args: self._auto_save_config())
-        ttk.Entry(self, textvariable=self.multislide_freq_var, width=5).grid(row=5, column=1, sticky="w", padx=(200, 0))
-        ttk.Label(self, text="(0=off)", font=("TkDefaultFont", 8)).grid(row=5, column=1, sticky="w", padx=(270, 0))
+        ttk.Entry(self, textvariable=self.multislide_freq_var, width=5).grid(row=6, column=1, sticky="w", padx=(200, 0))
+        ttk.Label(self, text="(0=off)", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky="w", padx=(270, 0))
 
-        ttk.Label(self, text="Transition Duration (s):").grid(row=6, column=0, sticky="e")
+        ttk.Label(self, text="Transition Duration (s):").grid(row=7, column=0, sticky="e")
         self.trans_dur_var = tk.IntVar(value=self.config_data.get("transition_duration", 1))
         self.trans_dur_var.trace_add('write', lambda *args: self._auto_save_config())
-        ttk.Entry(self, textvariable=self.trans_dur_var, width=5).grid(row=6, column=1, sticky="w", padx=(5, 0))
+        ttk.Entry(self, textvariable=self.trans_dur_var, width=5).grid(row=7, column=1, sticky="w", padx=(5, 0))
 
         # Video Quality (positioned right after Transition Duration in same column area as MultiSlide Freq)
-        ttk.Label(self, text="Video Quality:").grid(row=6, column=1, sticky="w", padx=(80, 5))
+        ttk.Label(self, text="Video Quality:").grid(row=7, column=1, sticky="w", padx=(80, 5))
         self.video_quality_var = tk.StringVar(value=self.config_data.get("video_quality", "maximum"))
         self.video_quality_var.trace_add('write', lambda *args: self._on_video_quality_change())
         quality_combo = ttk.Combobox(self, textvariable=self.video_quality_var, width=10, state="readonly")
         quality_combo['values'] = ('maximum', 'high', 'medium', 'fast')
-        quality_combo.grid(row=6, column=1, sticky="w", padx=(190, 0))
+        quality_combo.grid(row=7, column=1, sticky="w", padx=(190, 0))
 
         # Buttons
         self.button_frame = ttk.Frame(self)
-        self.button_frame.grid(row=7, column=0, columnspan=4, sticky="w", pady=5)
+        self.button_frame.grid(row=8, column=0, columnspan=4, sticky="w", pady=5)
         
         self.export_button = ttk.Button(self.button_frame, text="Export Video", command=self.export_video)
         self.export_button.pack(side=tk.LEFT, padx=(0, 3))
@@ -246,12 +286,12 @@ class GUI(tk.Tk):
         self.cancel_button.pack(side=tk.LEFT)
 
         # Progress Bar
-        ttk.Label(self, text="Progress:").grid(row=8, column=0, sticky="nw", pady=(10, 0))
+        ttk.Label(self, text="Progress:").grid(row=9, column=0, sticky="nw", pady=(10, 0))
         self.progress = ttk.Progressbar(self, mode='determinate')
-        self.progress.grid(row=8, column=1, columnspan=3, sticky="ew", padx=(5, 0), pady=(10, 0))
+        self.progress.grid(row=9, column=1, columnspan=3, sticky="ew", padx=(5, 0), pady=(10, 0))
 
         # Log Panel
-        ttk.Label(self, text="Log:").grid(row=9, column=0, sticky="nw", pady=(10, 0))
+        ttk.Label(self, text="Log:").grid(row=10, column=0, sticky="nw", pady=(10, 0))
         
         # Create frame for log panel with scrollbars
         log_frame = ttk.Frame(self)
@@ -287,6 +327,9 @@ class GUI(tk.Tk):
         
         # Log available transitions now that log panel is ready
         self._log_available_transitions()
+        
+        # Update project path display now that all variables are initialized
+        self._update_project_path_display()
 
     def log_message(self, message):
         """Add a message to the log panel with timestamp or overwrite last line if message ends with \r"""
@@ -455,32 +498,82 @@ class GUI(tk.Tk):
             except Exception as e:
                 self.log_message(f"No existing project settings in folder (will create on save)")
 
+    def select_slideshows_folder(self):
+        """Browse for a new base Slideshows folder location"""
+        from slideshow.config import Config
+        import os
+        
+        # Get current slideshows directory
+        current_dir = str(Config.APP_SETTINGS_DIR)
+        initial_dir = current_dir if os.path.exists(current_dir) else os.path.expanduser('~')
+        
+        folder = filedialog.askdirectory(
+            initialdir=initial_dir,
+            title="Select Base Slideshows Folder Location"
+        )
+        
+        if folder:
+            # Update the APP_SETTINGS_DIR
+            new_base_dir = Path(folder)
+            Config.APP_SETTINGS_DIR = new_base_dir
+            Config.APP_SETTINGS_FILE = new_base_dir / "slideshow_settings.json"
+            
+            # Ensure the directory exists
+            new_base_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save this preference in app settings
+            app_settings = load_app_settings()
+            app_settings["slideshows_base_dir"] = str(new_base_dir)
+            save_app_settings(app_settings)
+            
+            self.log_message(f"Slideshows base folder changed to: {folder}")
+            
+            # Update project path display
+            self._update_project_path_display()
+            
+            # Update input/output paths to use new base
+            project_name = self.name_var.get().strip()
+            if project_name:
+                new_input, new_output = build_project_paths(project_name)
+                self.input_var.set(new_input)
+                self.output_var.set(new_output)
+                self.log_message(f"Updated project paths to new location")
+
     def _on_project_name_focus_in(self):
-        """Handle focus-in: Push current project in edit control to top of history"""
+        """Handle focus-in: Store current project name for comparison on focus-out"""
         current_name = self.name_var.get().strip()
         
         # Store what's currently at top of queue for comparison on focus-out
         self._project_name_on_focus = current_name
-        
-        # Push current project name to top of history
-        if current_name:
-            add_to_project_history(current_name)
-            self._refresh_project_history()
     
     def _on_project_name_focus_out(self):
-        """Handle focus-out: Compare with stored name, only push to history if different"""
+        """Handle focus-out: Compare with stored name, only update if different"""
         new_name = self.name_var.get().strip()
         
         # Compare with what was at top when focus gained
         if new_name != self._project_name_on_focus:
             # Name changed - handle rename logic
             self._on_project_name_change()
-            
-            # Push changed name to top of history
-            if new_name:
-                add_to_project_history(new_name)
-                self._refresh_project_history()
-        # If same as stored name, do nothing (already at top from focus-in)
+        
+        # Update project path display
+        self._update_project_path_display()
+    
+    def _update_project_path_display(self):
+        """Update the project path display label to show the project's base folder."""
+        # Check if variables exist yet (during initialization)
+        if not hasattr(self, 'output_var') or not hasattr(self, 'name_var') or not hasattr(self, 'project_path_var'):
+            return
+        
+        from slideshow.config import Config
+        
+        # Show the project's base directory: Slideshows/ProjectName
+        project_name = self.name_var.get().strip()
+        if project_name:
+            project_path = str(Config.APP_SETTINGS_DIR / sanitize_project_name(project_name))
+            self.project_path_var.set(project_path)
+        else:
+            # No project name, just show base directory
+            self.project_path_var.set(str(Config.APP_SETTINGS_DIR))
     
     def _on_project_selected(self):
         """Handle selection from project history dropdown"""
@@ -488,11 +581,68 @@ class GUI(tk.Tk):
         if not selected_name:
             return
         
-        # Just update the project name - the user will need to set/select the output folder
+        # Update the stored name to prevent focus-out from triggering changes
+        self._project_name_on_focus = selected_name
+        
+        # Find the selected project in history to get its path
+        for entry in self.project_history:
+            if entry["name"] == selected_name:
+                project_folder = entry.get("path", "")
+                
+                if project_folder:
+                    # Load the project from its saved path (project folder)
+                    self.log_message(f"Loading project from history: {selected_name} at {project_folder}")
+                    try:
+                        # Build output folder from project folder
+                        output_folder = str(Path(project_folder) / "Output")
+                        config = load_config(output_folder)
+                        
+                        # Update UI with loaded config
+                        self._updating_ui = True
+                        self.config_data = config
+                        
+                        # Update all UI fields
+                        self.name_var.set(config.get("project_name", selected_name))
+                        self.input_var.set(config.get("input_folder", ""))
+                        self.output_var.set(output_folder)
+                        self.soundtrack_var.set(config.get("soundtrack", ""))
+                        self.photo_dur_var.set(config.get("photo_duration", 3))
+                        self.video_dur_var.set(config.get("video_duration", 10))
+                        self.multislide_freq_var.set(config.get("multislide_frequency", 10))
+                        self.video_quality_var.set(config.get("video_quality", "maximum"))
+                        self.trans_dur_var.set(config.get("transition_duration", 1))
+                        
+                        # Update transition dropdown
+                        self.transition_var.set(config.get("transition_type", "fade"))
+                        
+                        # Update the stored name to the loaded project name
+                        self._project_name_on_focus = config.get("project_name", selected_name)
+                        
+                        self._updating_ui = False
+                        
+                        self.log_message(f"Loaded project: {selected_name}")
+                        self._check_play_button_state()
+                        
+                    except Exception as e:
+                        self._updating_ui = False
+                        self.log_message(f"Error loading project: {e}")
+                else:
+                    # No path saved, build default paths based on name
+                    self.log_message(f"Selected project from history: {selected_name} (no saved path)")
+                    new_input, new_output = build_project_paths(selected_name)
+                    self.input_var.set(new_input)
+                    self.output_var.set(new_output)
+                
+                self._update_project_path_display()
+                return
+        
+        # Fallback if not found in history
         self.log_message(f"Selected project from history: {selected_name}")
-        # The name is already set in name_var by the combobox selection
-        # Trigger the name change handler
-        self._on_project_name_change()
+        # Build default paths for the selected name
+        new_input, new_output = build_project_paths(selected_name)
+        self.input_var.set(new_input)
+        self.output_var.set(new_output)
+        self._update_project_path_display()
     
     def _load_project_from_path(self, project_path: str, project_name: str):
         """Load a project from its path"""
@@ -539,8 +689,10 @@ class GUI(tk.Tk):
     
     def _refresh_project_history(self):
         """Refresh the project history dropdown"""
-        self.project_history = get_project_history()  # Returns list of strings
-        self.name_combo['values'] = self.project_history
+        self.project_history = get_project_history()  # Returns list of dicts with name and path
+        # Update combobox with just the names
+        project_names = [entry["name"] for entry in self.project_history]
+        self.name_combo['values'] = project_names
     
     def _on_project_name_change(self):
         """Handle project name changes on focus loss - update folder paths and load/save config."""
@@ -550,7 +702,7 @@ class GUI(tk.Tk):
         current_output = self.output_var.get()
         current_input = self.input_var.get()
         
-        # Check if we're using the standard SlideshowBuilder structure
+        # Check if we're using the standard SlideShowBuilder structure
         if current_output:
             # Build new paths based on project name
             new_input_path, new_output_path = build_project_paths(new_project_name)
@@ -637,8 +789,10 @@ class GUI(tk.Tk):
     
     def _refresh_project_history(self):
         """Refresh the project history dropdown"""
-        self.project_history = get_project_history()  # Returns list of strings
-        self.name_combo['values'] = self.project_history
+        self.project_history = get_project_history()  # Returns list of dicts with name and path
+        # Update combobox with just the names
+        project_names = [entry["name"] for entry in self.project_history]
+        self.name_combo['values'] = project_names
     
     def select_soundtrack(self):
         import os
@@ -840,9 +994,20 @@ class GUI(tk.Tk):
             else:
                 # Save current config (new project or updating existing project settings)
                 save_config(self.config_data, output_folder)
+            
+            # Update project history with project folder path (not output folder)
+            project_name = new_config.get("project_name", "")
+            if project_name:
+                project_folder = str(Path(output_folder).parent)
+                add_to_project_history(project_name, project_folder)
+                self._refresh_project_history()
+            
+            # Update project path display
+            self._update_project_path_display()
         else:
             # If no output folder yet, just update app settings with current config
             # This will be saved properly once output folder is selected
+            self._update_project_path_display()
             pass
         
         self._check_play_button_state()  # Update Play button state
