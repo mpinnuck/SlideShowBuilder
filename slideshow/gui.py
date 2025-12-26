@@ -593,18 +593,30 @@ class GUI(tk.Tk):
                     # Load the project from its saved path (project folder)
                     self.log_message(f"Loading project from history: {selected_name} at {project_folder}")
                     try:
-                        # Build output folder from project folder
-                        output_folder = str(Path(project_folder) / "Output")
+                        # Build default paths from project folder
+                        project_path = Path(project_folder)
+                        default_input_folder = str(project_path / "Slides")
+                        output_folder = str(project_path / "Output")
+                        
                         config = load_config(output_folder)
+                        
+                        # Determine input folder: use config value if present, else default
+                        config_input = config.get("input_folder", "").strip()
+                        input_folder = config_input if config_input else default_input_folder
                         
                         # Update UI with loaded config
                         self._updating_ui = True
                         self.config_data = config
                         
-                        # Update all UI fields
-                        self.name_var.set(config.get("project_name", selected_name))
-                        self.input_var.set(config.get("input_folder", ""))
-                        self.output_var.set(output_folder)
+                        # Update config_data with corrected paths and project name
+                        self.config_data["input_folder"] = input_folder
+                        self.config_data["output_folder"] = output_folder
+                        self.config_data["project_name"] = selected_name
+                        
+                        # Update all UI fields - use selected name and determined paths
+                        self.name_var.set(selected_name)  # Use selected name from dropdown
+                        self.input_var.set(input_folder)  # Use config or default path
+                        self.output_var.set(output_folder)  # Use calculated path
                         self.soundtrack_var.set(config.get("soundtrack", ""))
                         self.photo_dur_var.set(config.get("photo_duration", 3))
                         self.video_dur_var.set(config.get("video_duration", 10))
@@ -615,8 +627,8 @@ class GUI(tk.Tk):
                         # Update transition dropdown
                         self.transition_var.set(config.get("transition_type", "fade"))
                         
-                        # Update the stored name to the loaded project name
-                        self._project_name_on_focus = config.get("project_name", selected_name)
+                        # Update the stored name to match the selected name
+                        self._project_name_on_focus = selected_name
                         
                         self._updating_ui = False
                         
@@ -1118,6 +1130,27 @@ class GUI(tk.Tk):
             self.play_button.configure(state='disabled')
 
     def export_video(self):
+        # Validate input folder before starting export
+        input_folder = Path(self.input_var.get().strip())
+        
+        if not input_folder.exists():
+            wide_messagebox("error", "Input Folder Missing", 
+                          f"The input folder does not exist:\n{input_folder}\n\n"
+                          "Please select a valid input folder.")
+            return
+        
+        # Check if input folder has any media files
+        media_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.heic', '.heif', 
+                          '.mp4', '.mov', '.avi', '.mkv', '.m4v'}
+        media_files = [f for f in input_folder.glob("*") 
+                      if f.suffix.lower() in media_extensions and f.is_file()]
+        
+        if not media_files:
+            wide_messagebox("error", "No Media Files", 
+                          f"The input folder contains no media files (photos or videos):\n{input_folder}\n\n"
+                          "Please add photos or videos to the Slides folder before exporting.")
+            return
+        
         self.log_message("Starting video export...")
         self.reset_progress()
         

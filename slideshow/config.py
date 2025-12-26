@@ -48,7 +48,7 @@ class Config:
         "photo_duration": 3.0,
         "video_duration": 5.0,
         "transition_duration": 1.0,
-        "transition_type": "fade",
+        "transition_type": "origami",
         "fps": 30,
         "resolution": [1920, 1080],
         "origami_easing": "quad",
