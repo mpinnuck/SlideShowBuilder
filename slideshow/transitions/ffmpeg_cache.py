@@ -291,14 +291,12 @@ class FFmpegCache:
     def clear_cache(cls):
         """
         Clear all cached files and metadata.
-        Automatically configures cache if needed.
+        Only clears if cache is already configured.
         """
-        # Auto-configure if not already configured
-        cls.auto_configure()
-        
-        # If still not initialized, can't clear
+        # Only clear if already configured - don't auto-configure
+        # to avoid clearing the wrong cache directory
         if not cls._initialized or not cls._cache_dir:
-            print(f"[FFmpegCache] Cache not configured. Cannot clear cache.")
+            # Silently skip - cache not configured yet, nothing to clear
             return
             
         if cls._cache_dir.exists():
