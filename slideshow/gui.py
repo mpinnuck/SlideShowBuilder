@@ -466,8 +466,8 @@ class GUI(tk.Tk):
             # Clear FFmpeg cache when input folder changes
             if old_folder:  # Only clear if there was a previous folder
                 try:
-                    FFmpegCache.clear_cache()
-                    self.log_message("[FFmpegCache] Cache cleared due to input folder change")
+                    if FFmpegCache.clear_cache():
+                        self.log_message("[FFmpegCache] Cache cleared due to input folder change")
                 except Exception as e:
                     self.log_message(f"[FFmpegCache] Warning: Failed to clear cache: {e}")
 
@@ -972,8 +972,8 @@ class GUI(tk.Tk):
         # Check if input folder changed and clear cache if so
         if old_input_folder and new_input_folder != old_input_folder:
             try:
-                FFmpegCache.clear_cache()
-                self.log_message("[FFmpegCache] Cache cleared due to input folder change")
+                if FFmpegCache.clear_cache():
+                    self.log_message("[FFmpegCache] Cache cleared due to input folder change")
             except Exception as e:
                 self.log_message(f"[FFmpegCache] Warning: Failed to clear cache: {e}")
         
@@ -1170,6 +1170,52 @@ class GUI(tk.Tk):
         """Background thread for video export"""
         output_path = None
         try:
+            # Ensure config_data is synchronized with current UI state before export
+            current_config = self._get_current_config()
+            
+            # Validate and rebuild output folder from project name to ensure consistency
+            # Note: Input folder can be anywhere (NAS, external drive, etc.) so we don't validate it
+            project_name = current_config.get("project_name", "").strip()
+            if project_name:
+                default_input_folder, correct_output_folder = build_project_paths(project_name)
+                
+                # Always ensure output folder matches the project structure
+                current_output = current_config.get("output_folder", "")
+                if current_output != correct_output_folder:
+                    current_config["output_folder"] = correct_output_folder
+                    self.after(0, lambda out=correct_output_folder: self.output_var.set(out))
+                    self.after(0, lambda out=correct_output_folder: self.log_message(f"Output folder updated: {out}"))
+                else:
+                    # Output folder is already correct, use it
+                    correct_output_folder = current_output
+                
+                # Always set cache directory to match output folder (prevents stale cache paths)
+                correct_cache_dir = str(Path(correct_output_folder) / "working" / "ffmpeg_cache")
+                current_config["ffmpeg_cache_dir"] = correct_cache_dir
+                
+                # Also set temp directory to match output folder structure
+                current_temp = current_config.get("temp_directory", "")
+                if current_temp:
+                    # Check if temp directory is under the wrong output folder
+                    try:
+                        temp_path = Path(current_temp)
+                        output_path = Path(correct_output_folder)
+                        # If temp is not under the correct output folder, clear it
+                        if not temp_path.is_relative_to(output_path):
+                            current_config["temp_directory"] = ""
+                    except (ValueError, OSError):
+                        # If path comparison fails, clear it to be safe
+                        current_config["temp_directory"] = ""
+                
+                # Only set input folder to default if it's completely empty
+                current_input = current_config.get("input_folder", "").strip()
+                if not current_input:
+                    current_config["input_folder"] = default_input_folder
+                    self.after(0, lambda inp=default_input_folder: self.input_var.set(inp))
+                    self.after(0, lambda inp=default_input_folder: self.log_message(f"Input folder set to default: {inp}"))
+            
+            self.config_data.update(current_config)
+            
             # Build output path
             output_path = Path(self.config_data["output_folder"]) / f"{self.config_data['project_name']}.mp4"
             output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -288,16 +288,17 @@ class FFmpegCache:
             return None
     
     @classmethod
-    def clear_cache(cls):
+    def clear_cache(cls) -> bool:
         """
         Clear all cached files and metadata.
         Only clears if cache is already configured.
+        Returns True if cache was cleared, False if skipped.
         """
         # Only clear if already configured - don't auto-configure
         # to avoid clearing the wrong cache directory
         if not cls._initialized or not cls._cache_dir:
             # Silently skip - cache not configured yet, nothing to clear
-            return
+            return False
             
         if cls._cache_dir.exists():
             try:
@@ -318,13 +319,13 @@ class FFmpegCache:
                 cls._save_metadata()
                 
                 print(f"[FFmpegCache] Successfully cleared {entries_before} cache entries from {cls._cache_dir}")
+                return True
                 
             except Exception as e:
                 print(f"[FFmpegCache] Error clearing cache: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print(f"[FFmpegCache] Cache directory doesn't exist: {cls._cache_dir}")
+                return False
+        
+        return False
     
     @classmethod
     def get_cache_entries_with_sources(cls) -> Dict[str, Any]:

@@ -141,8 +141,43 @@ class Slideshow:
         # Get multislide frequency setting
         multislide_frequency = self.config.get("multislide_frequency", 0)
         
-        # Sort by file modification time (chronological order) instead of filename
-        all_files = sorted(input_folder.glob("*"), key=lambda p: p.stat().st_mtime)
+        # Log that we're starting to load files
+        self._log(f"[Slideshow] Reading files from {input_folder}...")
+        
+        # Helper to get the best timestamp for a file (EXIF date for photos, else modification time)
+        def get_file_timestamp(path: Path) -> float:
+            """Get the best timestamp for sorting: EXIF date for photos, modification time for others"""
+            ext = path.suffix.lower()
+            
+            # For photos, try to get EXIF date
+            if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
+                try:
+                    from PIL import Image
+                    from PIL.ExifTags import TAGS
+                    import datetime
+                    
+                    with Image.open(path) as img:
+                        exif = img._getexif()
+                        if exif:
+                            # Try DateTimeOriginal first (when photo was taken)
+                            for tag_id, value in exif.items():
+                                tag_name = TAGS.get(tag_id, tag_id)
+                                if tag_name == 'DateTimeOriginal':
+                                    # Parse EXIF date format: "2016:06:15 14:30:25"
+                                    dt = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+                                    return dt.timestamp()
+                except Exception:
+                    pass  # Fall back to modification time
+            
+            # For videos and photos without EXIF, use modification time
+            return path.stat().st_mtime
+        
+        # Get all files first
+        all_files_list = list(input_folder.glob("*"))
+        self._log(f"[Slideshow] Sorting {len(all_files_list)} files by date...")
+        
+        # Sort by file timestamp (EXIF date for photos, modification time for videos)
+        all_files = sorted(all_files_list, key=get_file_timestamp)
         
         # Filter out non-media files
         # AAE files are Apple's edit metadata files that accompany photos
