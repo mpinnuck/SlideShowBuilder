@@ -3,6 +3,7 @@ from tkinter import ttk, filedialog, messagebox, font
 import threading
 import sys
 import re
+import shutil
 from pathlib import Path
 from PIL import Image, ImageTk, ImageOps
 from slideshow.config import load_config, save_config, save_app_settings, load_app_settings, get_project_config_path, add_to_project_history, get_project_history, add_to_project_history, get_project_history
@@ -283,7 +284,8 @@ class GUI(tk.Tk):
         ttk.Button(self.button_frame, text="Settings", command=self.open_settings).pack(side=tk.LEFT, padx=(0, 3))
         ttk.Button(self.button_frame, text="Save Config", command=self.save_config).pack(side=tk.LEFT, padx=(0, 3))
         self.cancel_button = ttk.Button(self.button_frame, text="Cancel", command=self.cancel_export, state='disabled')
-        self.cancel_button.pack(side=tk.LEFT)
+        self.cancel_button.pack(side=tk.LEFT, padx=(0, 3))
+        ttk.Button(self.button_frame, text="Project Rename", command=self.rename_project).pack(side=tk.LEFT)
 
         # Progress Bar
         ttk.Label(self, text="Progress:").grid(row=9, column=0, sticky="nw", pady=(10, 0))
@@ -1265,6 +1267,223 @@ class GUI(tk.Tk):
         self.cancel_requested = True
         self.log_message("Cancelling export... please wait")
         self.cancel_button.configure(state='disabled')  # Disable after clicked
+    
+    def rename_project(self):
+        """Rename the current project folder and update all paths"""
+        current_project_name = self.name_var.get().strip()
+        if not current_project_name:
+            wide_messagebox("error", "Error", "No project is currently loaded.")
+            return
+        
+        current_output = self.output_var.get().strip()
+        if not current_output:
+            wide_messagebox("error", "Error", "No project output folder is set.")
+            return
+        
+        # Get current project folder
+        current_project_folder = Path(current_output).parent
+        if not current_project_folder.exists():
+            wide_messagebox("error", "Error", f"Current project folder does not exist: {current_project_folder}")
+            return
+        
+        # Show rename dialog
+        new_name = self._show_rename_dialog(current_project_name)
+        if not new_name or new_name == current_project_name:
+            return  # User cancelled or didn't change the name
+        
+        # Sanitize the new name for folder
+        sanitized_new = sanitize_project_name(new_name)
+        sanitized_current = sanitize_project_name(current_project_name)
+        
+        if sanitized_new == sanitized_current:
+            # Just update the display name in config, no folder rename needed
+            self.name_var.set(new_name)
+            self.config_data["project_name"] = new_name
+            self._auto_save_config()
+            self.log_message(f"Project display name updated to: {new_name}")
+            return
+        
+        # Build new project folder path
+        new_project_folder = current_project_folder.parent / sanitized_new
+        
+        if new_project_folder.exists():
+            wide_messagebox("error", "Error", f"A project folder with that name already exists: {new_project_folder}")
+            return
+        
+        try:
+            # Rename the project folder
+            self.log_message(f"Renaming project folder from {current_project_folder.name} to {sanitized_new}...")
+            current_project_folder.rename(new_project_folder)
+            
+            # Check if input folder is inside the old project folder
+            current_input = Path(self.input_var.get().strip())
+            try:
+                # Check if current input is relative to old project folder
+                current_input.relative_to(current_project_folder)
+                # It is inside the project - update to new location
+                new_input_path = str(new_project_folder / "Slides")
+                self.log_message(f"Input folder updated to new project location: {new_input_path}")
+            except ValueError:
+                # Input folder is external (like NAS) - keep it unchanged
+                new_input_path = str(current_input)
+                self.log_message(f"Input folder unchanged (external location): {new_input_path}")
+            
+            new_output_path = str(new_project_folder / "Output")
+            
+            # Rename any MP4 files in the Output folder that contain the old project name
+            output_folder = new_project_folder / "Output"
+            if output_folder.exists():
+                mp4_files = list(output_folder.glob("*.mp4"))
+                for mp4_file in mp4_files:
+                    # Check if filename contains the old sanitized project name
+                    if sanitized_current in mp4_file.name:
+                        # Replace old name with new name in filename
+                        new_filename = mp4_file.name.replace(sanitized_current, sanitized_new)
+                        new_mp4_path = output_folder / new_filename
+                        try:
+                            mp4_file.rename(new_mp4_path)
+                            self.log_message(f"Renamed output video: {mp4_file.name} → {new_filename}")
+                        except Exception as rename_error:
+                            self.log_message(f"Warning: Could not rename {mp4_file.name}: {rename_error}")
+            
+            # Update UI
+            self.name_var.set(new_name)
+            self.input_var.set(new_input_path)
+            self.output_var.set(new_output_path)
+            
+            # Update config
+            self.config_data["project_name"] = new_name
+            self.config_data["input_folder"] = new_input_path
+            self.config_data["output_folder"] = new_output_path
+            
+            # Update temp and cache paths in config
+            cache_dir = new_output_path + "/working/ffmpeg_cache"
+            self.config_data["ffmpeg_cache_dir"] = cache_dir
+            if "temp_directory" in self.config_data:
+                self.config_data["temp_directory"] = new_output_path + "/working"
+            
+            # Save updated config to new location
+            new_config_path = new_project_folder / "slideshow_config.json"
+            save_config(self.config_data, new_output_path)
+            
+            # Verify old folder is gone and clean it up if it still exists
+            old_config_path = current_project_folder / "slideshow_config.json"
+            if current_project_folder.exists():
+                self.log_message(f"Warning: Old project folder still exists, removing it: {current_project_folder}")
+                try:
+                    shutil.rmtree(current_project_folder)
+                except Exception as cleanup_error:
+                    self.log_message(f"Warning: Could not remove old folder: {cleanup_error}")
+            
+            # Update app settings
+            from slideshow.config import Config
+            app_settings = load_app_settings()
+            
+            # Update last_project_path
+            app_settings["last_project_path"] = str(new_config_path)
+            
+            # Remove ALL old history entries related to the old project
+            # Need to check both path formats and old project folder name
+            if "project_history" in app_settings:
+                old_path_str = str(old_config_path)
+                old_folder_str = str(current_project_folder)
+                
+                def is_old_project(entry):
+                    """Check if entry matches the old project"""
+                    entry_path = entry.get("path", "")
+                    # Match if path equals old config path
+                    if entry_path == old_path_str:
+                        return True
+                    # Match if path equals old folder (without config file)
+                    if entry_path == old_folder_str:
+                        return True
+                    # Match if path starts with old folder path
+                    if entry_path.startswith(old_folder_str + "/"):
+                        return True
+                    return False
+                
+                app_settings["project_history"] = [
+                    entry for entry in app_settings["project_history"]
+                    if not is_old_project(entry)
+                ]
+            
+            # Add the renamed project to the front of history
+            app_settings["project_history"] = app_settings.get("project_history", [])
+            app_settings["project_history"].insert(0, {
+                "name": new_name,
+                "path": str(new_config_path)
+            })
+            
+            # Keep only last 10 entries
+            app_settings["project_history"] = app_settings["project_history"][:10]
+            
+            # Save updated settings
+            save_app_settings(app_settings)
+            
+            # Refresh project history dropdown
+            self._refresh_project_history()
+            
+            self.log_message(f"Project successfully renamed to: {new_name}")
+            self.log_message(f"New project folder: {new_project_folder}")
+            self.log_message(f"Old project removed from history and folder deleted")
+            
+        except Exception as e:
+            wide_messagebox("error", "Error", f"Failed to rename project: {e}")
+            self.log_message(f"Error renaming project: {e}")
+    
+    def _show_rename_dialog(self, current_name: str) -> str:
+        """Show dialog to enter new project name. Returns new name or None if cancelled."""
+        dialog = tk.Toplevel(self)
+        dialog.title("Rename Project")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        # Create frame with padding
+        frame = ttk.Frame(dialog, padding=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Label and entry
+        ttk.Label(frame, text="Enter new project name:").pack(anchor=tk.W, pady=(0, 5))
+        
+        name_var = tk.StringVar(value=current_name)
+        entry = ttk.Entry(frame, textvariable=name_var, width=40)
+        entry.pack(fill=tk.X, pady=(0, 15))
+        entry.select_range(0, tk.END)
+        entry.focus_set()
+        
+        result = [None]
+        
+        def on_ok():
+            new_name = name_var.get().strip()
+            if new_name:
+                result[0] = new_name
+            dialog.destroy()
+        
+        def on_cancel():
+            dialog.destroy()
+        
+        # Buttons
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack()
+        
+        ttk.Button(btn_frame, text="OK", command=on_ok, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=on_cancel, width=10).pack(side=tk.LEFT, padx=5)
+        
+        # Bind Enter key to OK
+        entry.bind('<Return>', lambda e: on_ok())
+        dialog.bind('<Escape>', lambda e: on_cancel())
+        
+        # Center dialog
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        dialog.wait_window()
+        return result[0]
     
     def open_image_rotator(self):
         """Open the image preview and rotation dialog"""
