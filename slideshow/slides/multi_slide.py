@@ -594,9 +594,14 @@ class MultiSlide(SlideItem):
                     
                     result = subprocess.run(cmd, capture_output=True, text=True)
                     if result.returncode != 0:
-                        raise RuntimeError(f"Failed to prepare video: {result.stderr}")
+                        raise RuntimeError(f"Failed to prepare video {path.name}: {result.stderr}")
             
             # Step 2: Use FFmpeg complex filter to composite the three sources
+            # Verify all temp clips were created successfully
+            for i, temp_clip in enumerate(temp_clips):
+                if not temp_clip.exists():
+                    raise RuntimeError(f"Temp clip {i} was not created: {temp_clip.name} (source: {media_paths[i].name})")
+            
             # Layout: 70% main (left), 30% split vertically (right)
             canvas_w, canvas_h = self.resolution
             main_w = int(canvas_w * 0.7)
@@ -661,10 +666,7 @@ class MultiSlide(SlideItem):
             if log_callback:
                 log_callback(f"[MultiSlide] Composite complete: {clip_path.name}")
             
-            return clip_path
-            
-        finally:
-            # Clean up temporary clips
+            # Clean up temporary clips on success only
             for temp_clip in temp_clips:
                 try:
                     if temp_clip.exists():
@@ -678,3 +680,9 @@ class MultiSlide(SlideItem):
                         temp_heic.unlink()
                 except Exception:
                     pass
+            
+            return clip_path
+            
+        except Exception:
+            # On error, preserve temp files for debugging
+            raise

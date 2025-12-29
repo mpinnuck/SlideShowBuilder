@@ -1132,25 +1132,13 @@ class GUI(tk.Tk):
             self.play_button.configure(state='disabled')
 
     def export_video(self):
-        # Validate input folder before starting export
+        # Quick validation of input folder before starting export
         input_folder = Path(self.input_var.get().strip())
         
         if not input_folder.exists():
             wide_messagebox("error", "Input Folder Missing", 
                           f"The input folder does not exist:\n{input_folder}\n\n"
                           "Please select a valid input folder.")
-            return
-        
-        # Check if input folder has any media files
-        media_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.heic', '.heif', 
-                          '.mp4', '.mov', '.avi', '.mkv', '.m4v'}
-        media_files = [f for f in input_folder.glob("*") 
-                      if f.suffix.lower() in media_extensions and f.is_file()]
-        
-        if not media_files:
-            wide_messagebox("error", "No Media Files", 
-                          f"The input folder contains no media files (photos or videos):\n{input_folder}\n\n"
-                          "Please add photos or videos to the Slides folder before exporting.")
             return
         
         self.log_message("Starting video export...")
@@ -1164,7 +1152,7 @@ class GUI(tk.Tk):
         # Reset cancellation flag
         self.cancel_requested = False
         
-        # Run export in background thread
+        # Run export in background thread (validation moved to thread to avoid blocking UI)
         export_thread = threading.Thread(target=self._export_video_thread, daemon=True)
         export_thread.start()
     
@@ -1172,6 +1160,26 @@ class GUI(tk.Tk):
         """Background thread for video export"""
         output_path = None
         try:
+            self.after(0, lambda: self.log_message("Validating input folder..."))
+            
+            # Validate that input folder has media files (do this in background thread to avoid blocking UI)
+            input_folder = Path(self.config_data.get("input_folder", "").strip())
+            media_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.heic', '.heif', 
+                              '.mp4', '.mov', '.avi', '.mkv', '.m4v'}
+            
+            # Quick check: just look for ANY media file (don't enumerate all files)
+            has_media = False
+            for item in input_folder.iterdir():
+                if item.is_file() and item.suffix.lower() in media_extensions:
+                    has_media = True
+                    break
+            
+            if not has_media:
+                self.after(0, lambda: wide_messagebox("error", "No Media Files", 
+                              f"The input folder contains no media files (photos or videos):\n{input_folder}\n\n"
+                              "Please add photos or videos to the Slides folder before exporting."))
+                return
+            
             # Ensure config_data is synchronized with current UI state before export
             current_config = self._get_current_config()
             

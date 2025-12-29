@@ -144,10 +144,22 @@ class Slideshow:
         # Log that we're starting to load files
         self._log(f"[Slideshow] Reading files from {input_folder}...")
         
-        # Helper to get the best timestamp for a file (EXIF date for photos, else modification time)
+        # Get all files first
+        all_files_list = list(input_folder.glob("*"))
+        total_files = len(all_files_list)
+        
+        # Sort with cached timestamps (progress shown during EXIF extraction)
+        self._log(f"[Slideshow] Sorting {total_files} files by date taken...")
+        timestamp_cache = {}
+        files_processed = [0]  # Use list to allow modification in nested function
+        
         def get_file_timestamp(path: Path) -> float:
-            """Get the best timestamp for sorting: EXIF date for photos, modification time for others"""
+            """Get timestamp for sorting: EXIF date for photos, modification time for others"""
+            if path in timestamp_cache:
+                return timestamp_cache[path]
+            
             ext = path.suffix.lower()
+            timestamp = path.stat().st_mtime  # Default fallback
             
             # For photos, try to get EXIF date
             if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
@@ -159,34 +171,34 @@ class Slideshow:
                     with Image.open(path) as img:
                         exif = img._getexif()
                         if exif:
-                            # Try DateTimeOriginal first (when photo was taken)
                             for tag_id, value in exif.items():
                                 tag_name = TAGS.get(tag_id, tag_id)
                                 if tag_name == 'DateTimeOriginal':
-                                    # Parse EXIF date format: "2016:06:15 14:30:25"
                                     dt = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                                    return dt.timestamp()
+                                    timestamp = dt.timestamp()
+                                    break
                 except Exception:
-                    pass  # Fall back to modification time
+                    pass  # Use modification time fallback
             
-            # For videos and photos without EXIF, use modification time
-            return path.stat().st_mtime
+            timestamp_cache[path] = timestamp
+            files_processed[0] += 1
+            
+            # Progress every 100 files
+            if files_processed[0] % 100 == 0:
+                self._log(f"[Slideshow] Sorting {files_processed[0]}/{total_files} files by date taken...\r")
+            
+            return timestamp
         
-        # Get all files first
-        all_files_list = list(input_folder.glob("*"))
-        self._log(f"[Slideshow] Sorting {len(all_files_list)} files by date...")
-        
-        # Sort by file timestamp (EXIF date for photos, modification time for videos)
         all_files = sorted(all_files_list, key=get_file_timestamp)
-        
-        # Filter out non-media files
-        # AAE files are Apple's edit metadata files that accompany photos
-        # DS_Store, Thumbs.db are system metadata files
-        ignored_extensions = {'.aae', '.ini', '.db', '.tmp'}
+        self._log(f"[Slideshow] Sorted {total_files} files by date taken")
+        # Filter to only supported media files (whitelist approach)
+        # Photos: JPEG, PNG, HEIC/HEIF
+        # Videos: MP4, MOV
+        supported_extensions = {'.jpg', '.jpeg', '.png', '.heic', '.heif', '.mp4', '.mov'}
         ignored_names = {'.ds_store', 'thumbs.db', 'desktop.ini'}
         media_files = [
             f for f in all_files 
-            if f.suffix.lower() not in ignored_extensions 
+            if f.suffix.lower() in supported_extensions
             and f.name.lower() not in ignored_names
             and f.is_file()
         ]
@@ -503,9 +515,8 @@ class Slideshow:
             #         self._log(f"[FFmpegCache] Cache stats: {cache_stats['total_entries']} entries "
             #                  f"({cache_stats['clip_count']} clips, {cache_stats['frame_count']} frames), "
             #                  f"{cache_stats['total_size_mb']:.1f} MB (no usage data yet)")
-
-        finally:
-            # Check config before cleaning up
+            
+            # Clean up working directory on successful completion only
             keep_intermediate = self.config.get("keep_intermediate_frames", False)
             
             if self.working_dir.exists() and not keep_intermediate:
@@ -522,6 +533,11 @@ class Slideshow:
                     self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
             # elif self.working_dir.exists():
             #     self._log(f"[Slideshow] Preserving working dir (keep_intermediate_frames enabled)")
+
+        except Exception:
+            # On error, preserve working directory for debugging
+            # This allows users to inspect temp files and see what went wrong
+            raise
     
     # -------------------------------
     # Cache Management
