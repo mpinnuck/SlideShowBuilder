@@ -45,6 +45,7 @@ class Config:
         "project_name": "MyProject",
         "input_folder": str(APP_SETTINGS_DIR / "MyProject" / "Slides"),
         "output_folder": str(APP_SETTINGS_DIR / "MyProject" / "Output"),
+        "recurse_folders": False,
         "photo_duration": 3.0,
         "video_duration": 5.0,
         "transition_duration": 1.0,

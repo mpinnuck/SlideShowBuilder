@@ -142,10 +142,17 @@ class Slideshow:
         multislide_frequency = self.config.get("multislide_frequency", 0)
         
         # Log that we're starting to load files
-        self._log(f"[Slideshow] Reading files from {input_folder}...")
+        recurse_folders = self.config.get("recurse_folders", False)
+        if recurse_folders:
+            self._log(f"[Slideshow] Reading files recursively from {input_folder}...")
+        else:
+            self._log(f"[Slideshow] Reading files from {input_folder}...")
         
-        # Get all files first
-        all_files_list = list(input_folder.glob("*"))
+        # Get all files (recursive or not)
+        if recurse_folders:
+            all_files_list = [f for f in input_folder.rglob("*") if f.is_file()]
+        else:
+            all_files_list = [f for f in input_folder.glob("*") if f.is_file()]
         total_files = len(all_files_list)
         
         # Sort with cached timestamps (progress shown during EXIF extraction)
@@ -154,12 +161,15 @@ class Slideshow:
         files_processed = [0]  # Use list to allow modification in nested function
         
         def get_file_timestamp(path: Path) -> float:
-            """Get timestamp for sorting: EXIF date for photos, modification time for others"""
+            """Get timestamp for sorting: EXIF date for photos, creation/modification time for others"""
             if path in timestamp_cache:
                 return timestamp_cache[path]
             
             ext = path.suffix.lower()
-            timestamp = path.stat().st_mtime  # Default fallback
+            stat = path.stat()
+            
+            # Default fallback: try creation time first (st_birthtime on macOS), then modification time
+            timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
             
             # For photos, try to get EXIF date
             if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
@@ -178,7 +188,35 @@ class Slideshow:
                                     timestamp = dt.timestamp()
                                     break
                 except Exception:
-                    pass  # Use modification time fallback
+                    pass  # Use creation/modification time fallback
+            
+            # For videos, try to get creation date from metadata
+            elif ext in ('.mp4', '.mov'):
+                try:
+                    import subprocess
+                    import json
+                    
+                    # Use ffprobe to get creation time
+                    result = subprocess.run([
+                        'ffprobe', '-v', 'quiet', '-print_format', 'json',
+                        '-show_format', str(path)
+                    ], capture_output=True, text=True, timeout=5)
+                    
+                    if result.returncode == 0:
+                        metadata = json.loads(result.stdout)
+                        creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
+                        if creation_time:
+                            import datetime
+                            # Handle various ISO 8601 formats
+                            for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
+                                try:
+                                    dt = datetime.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
+                                    timestamp = dt.timestamp()
+                                    break
+                                except ValueError:
+                                    continue
+                except Exception:
+                    pass  # Use creation/modification time fallback
             
             timestamp_cache[path] = timestamp
             files_processed[0] += 1

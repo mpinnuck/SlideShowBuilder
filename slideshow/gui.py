@@ -206,6 +206,13 @@ class GUI(tk.Tk):
         self.project_path_var = tk.StringVar(value="")
         path_label = ttk.Label(self, textvariable=self.project_path_var, foreground="gray")
         path_label.grid(row=1, column=1, sticky="w", padx=(5, 0))
+        
+        # Recurse checkbox (between path and browse button)
+        self.recurse_var = tk.BooleanVar(value=self.config_data.get("recurse_folders", False))
+        self.recurse_var.trace_add('write', lambda *args: self._auto_save_config())
+        recurse_check = ttk.Checkbutton(self, text="Recurse", variable=self.recurse_var)
+        recurse_check.grid(row=1, column=1, sticky="e", padx=(0, 5))
+        
         ttk.Button(self, text="Browse", command=self.select_slideshows_folder).grid(row=1, column=2)
 
         # Input Folder (now row 2)
@@ -914,6 +921,7 @@ class GUI(tk.Tk):
         )
         
         config["video_quality"] = self.video_quality_var.get()
+        config["recurse_folders"] = self.recurse_var.get()
         
         return config
     
@@ -1164,20 +1172,30 @@ class GUI(tk.Tk):
             
             # Validate that input folder has media files (do this in background thread to avoid blocking UI)
             input_folder = Path(self.config_data.get("input_folder", "").strip())
+            recurse_folders = self.config_data.get("recurse_folders", False)
             media_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.heic', '.heif', 
                               '.mp4', '.mov', '.avi', '.mkv', '.m4v'}
             
             # Quick check: just look for ANY media file (don't enumerate all files)
             has_media = False
-            for item in input_folder.iterdir():
-                if item.is_file() and item.suffix.lower() in media_extensions:
-                    has_media = True
-                    break
+            if recurse_folders:
+                # Check recursively in all subdirectories
+                for item in input_folder.rglob("*"):
+                    if item.is_file() and item.suffix.lower() in media_extensions:
+                        has_media = True
+                        break
+            else:
+                # Check only in the root folder
+                for item in input_folder.iterdir():
+                    if item.is_file() and item.suffix.lower() in media_extensions:
+                        has_media = True
+                        break
             
             if not has_media:
+                recurse_msg = " (including subdirectories)" if recurse_folders else ""
                 self.after(0, lambda: wide_messagebox("error", "No Media Files", 
-                              f"The input folder contains no media files (photos or videos):\n{input_folder}\n\n"
-                              "Please add photos or videos to the Slides folder before exporting."))
+                              f"The input folder contains no media files{recurse_msg}:\n{input_folder}\n\n"
+                              "Please add photos or videos before exporting."))
                 return
             
             # Ensure config_data is synchronized with current UI state before export
@@ -1514,6 +1532,7 @@ class ImageRotatorDialog:
         self.parent = parent
         self.config_data = parent.config_data
         self.input_folder = Path(parent.input_var.get().strip())
+        recurse_folders = parent.config_data.get("recurse_folders", False)
         
         # Create dialog window
         self.dialog = tk.Toplevel(parent)
@@ -1521,16 +1540,20 @@ class ImageRotatorDialog:
         self.dialog.geometry("1200x800")
         self.dialog.transient(parent)
         
-        # Find all image files
+        # Find all image files (recursively if enabled)
         self.image_files = []
         for ext in ['.jpg', '.jpeg', '.png', '.heic', '.JPG', '.JPEG', '.PNG', '.HEIC']:
-            self.image_files.extend(self.input_folder.glob(f'*{ext}'))
+            if recurse_folders:
+                self.image_files.extend(self.input_folder.rglob(f'*{ext}'))
+            else:
+                self.image_files.extend(self.input_folder.glob(f'*{ext}'))
         
         # Sort all files together by name (case-insensitive for better sorting)
         self.image_files = sorted(self.image_files, key=lambda p: p.name.lower())
         
         if not self.image_files:
-            wide_messagebox("error", "Error", "No image files found in the input folder.")
+            recurse_msg = " (including subdirectories)" if recurse_folders else ""
+            wide_messagebox("error", "Error", f"No image files found in the input folder{recurse_msg}.")
             self.dialog.destroy()
             return
         
