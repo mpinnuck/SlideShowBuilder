@@ -1548,8 +1548,44 @@ class ImageRotatorDialog:
             else:
                 self.image_files.extend(self.input_folder.glob(f'*{ext}'))
         
-        # Sort all files together by name (case-insensitive for better sorting)
-        self.image_files = sorted(self.image_files, key=lambda p: p.name.lower())
+        # Sort by date taken (same as slideshow) - cache timestamps for performance
+        timestamp_cache = {}
+        
+        def get_file_timestamp(path: Path) -> float:
+            """Get timestamp for sorting: EXIF date for photos, creation/modification time for others"""
+            if path in timestamp_cache:
+                return timestamp_cache[path]
+            
+            ext = path.suffix.lower()
+            stat = path.stat()
+            
+            # Default fallback: try creation time first (st_birthtime on macOS), then modification time
+            timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
+            
+            # For photos, try to get EXIF date
+            if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
+                try:
+                    from PIL import Image
+                    from PIL.ExifTags import TAGS
+                    import datetime as dt
+                    
+                    img = Image.open(path)
+                    exif_data = img._getexif()
+                    if exif_data:
+                        for tag_id, value in exif_data.items():
+                            tag = TAGS.get(tag_id, tag_id)
+                            if tag == 'DateTimeOriginal':
+                                # Parse EXIF date format: "2023:12:25 14:30:45"
+                                date_obj = dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+                                timestamp = date_obj.timestamp()
+                                break
+                except Exception:
+                    pass  # Fall back to file timestamp
+            
+            timestamp_cache[path] = timestamp
+            return timestamp
+        
+        self.image_files = sorted(self.image_files, key=get_file_timestamp)
         
         if not self.image_files:
             recurse_msg = " (including subdirectories)" if recurse_folders else ""
@@ -1613,9 +1649,15 @@ class ImageRotatorDialog:
         )
         self.slider.pack(side=tk.LEFT, padx=5)
         
-        # Filename label
-        self.filename_label = ttk.Label(self.dialog, text="", font=("TkDefaultFont", 10, "bold"))
-        self.filename_label.pack(pady=(0, 10))
+        # Filename and date frame
+        filename_frame = ttk.Frame(self.dialog)
+        filename_frame.pack(pady=(0, 10))
+        
+        self.filename_label = ttk.Label(filename_frame, text="", font=("TkDefaultFont", 10, "bold"))
+        self.filename_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.date_label = ttk.Label(filename_frame, text="", font=("TkDefaultFont", 10))
+        self.date_label.pack(side=tk.LEFT)
         
         # Main frame with preview
         main_frame = ttk.Frame(self.dialog)
@@ -1665,9 +1707,13 @@ class ImageRotatorDialog:
         image_path = self.image_files[self.current_index]
         filename = image_path.name
         
+        # Get creation date
+        date_str = self._get_creation_date(image_path)
+        
         # Update counter and filename
         self.counter_label.config(text=f"Image {self.current_index + 1} of {len(self.image_files)}")
         self.filename_label.config(text=filename)
+        self.date_label.config(text=date_str)
         
         # Update slider to match current index (without triggering callback)
         self.slider_var.set(self.current_index + 1)
@@ -1731,17 +1777,23 @@ class ImageRotatorDialog:
             # Load the current image from disk
             img = Image.open(image_path)
             
+            # Preserve EXIF data before any operations
+            exif_data = img.info.get('exif', b'')
+            
             # Apply EXIF orientation first to get the correct base orientation
             img = ImageOps.exif_transpose(img)
             
             # Rotate the image (PIL rotates counter-clockwise, so negate)
             img_rotated = img.rotate(-degrees, expand=True)
             
-            # Save back to the same file
-            img_rotated.save(image_path)
+            # Save back to the same file, preserving EXIF data
+            if exif_data:
+                img_rotated.save(image_path, exif=exif_data)
+            else:
+                img_rotated.save(image_path)
             
             # Log the rotation
-            self.parent.log_message(f"Rotated and saved {filename} by {degrees}°")
+            self.parent.log_message(f"Rotated and saved {filename} by {degrees}° (EXIF preserved)")
             
             # Clear the thumbnail cache for this image
             self.thumbnail_cache.pop(filename, None)
@@ -1752,6 +1804,37 @@ class ImageRotatorDialog:
         except Exception as e:
             self.parent.log_message(f"Error rotating image {filename}: {e}")
             wide_messagebox("error", "Error", f"Failed to rotate image: {e}")
+    
+    def _get_creation_date(self, image_path: Path) -> str:
+        """Get the creation date of an image (EXIF or file timestamp)"""
+        try:
+            import datetime as dt
+            ext = image_path.suffix.lower()
+            
+            # Try EXIF date first for photos
+            if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
+                try:
+                    from PIL.ExifTags import TAGS
+                    img = Image.open(image_path)
+                    exif_data = img._getexif()
+                    if exif_data:
+                        for tag_id, value in exif_data.items():
+                            tag = TAGS.get(tag_id, tag_id)
+                            if tag == 'DateTimeOriginal':
+                                # Parse EXIF date format: "2023:12:25 14:30:45"
+                                date_obj = dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+                                return date_obj.strftime('%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    pass  # Fall through to file timestamp
+            
+            # Fall back to file creation/modification time
+            stat = image_path.stat()
+            timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
+            date_obj = dt.datetime.fromtimestamp(timestamp)
+            return date_obj.strftime('%Y-%m-%d %H:%M:%S')
+            
+        except Exception:
+            return ""
     
     def _prev_image(self):
         """Go to previous image"""

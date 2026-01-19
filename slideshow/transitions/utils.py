@@ -85,7 +85,10 @@ def load_and_resize_image(image_or_path, target_size=(1920, 1080)):
     Load an image (path or PIL.Image) and resize with letter/pillarboxing
     to exactly match the target resolution.
     """
+    from PIL import ImageOps
     img = image_or_path if isinstance(image_or_path, Image.Image) else Image.open(image_or_path).convert("RGB")
+    # Apply EXIF orientation correction (fixes upside-down/sideways images)
+    img = ImageOps.exif_transpose(img)
     original_width, original_height = img.size
     target_width, target_height = target_size
 

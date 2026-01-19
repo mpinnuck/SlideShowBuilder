@@ -492,7 +492,11 @@ class Slideshow:
 
             # --- Assemble & mux ---
             expected_duration = self.get_estimated_duration()
-            self._log(f"[Slideshow] Estimated duration for progress scaling: {expected_duration:.2f}s")
+            hours = int(expected_duration // 3600)
+            minutes = int((expected_duration % 3600) // 60)
+            seconds = expected_duration % 60
+            duration_str = f"{hours:02d}:{minutes:02d}:{seconds:05.2f}"
+            self._log(f"[Slideshow] Estimated duration for progress scaling: {duration_str}")
 
             # --- Pass 1: Assemble video-only ---
             self._log(f"[Slideshow] Assembling video-only...")
@@ -510,8 +514,14 @@ class Slideshow:
                                     total_steps=total_weighted_steps)
 
             actual_duration = self.get_file_duration(self.video_only)
-            self._log(f"[Slideshow] Video-only duration: {actual_duration:.2f}s" if actual_duration else
-                    "[Slideshow] WARNING: could not determine duration — using estimate")
+            if actual_duration:
+                hours = int(actual_duration // 3600)
+                minutes = int((actual_duration % 3600) // 60)
+                seconds = actual_duration % 60
+                duration_str = f"{hours:02d}:{minutes:02d}:{seconds:05.2f}"
+                self._log(f"[Slideshow] Video-only duration: {duration_str}")
+            else:
+                self._log("[Slideshow] WARNING: could not determine duration — using estimate")
 
             # --- Pass 2: Mux soundtrack (if present) using shared utility ---
             soundtrack_path = self.config.get("soundtrack", "")
