@@ -1553,12 +1553,11 @@ class ImageRotatorDialog:
         self.dialog.transient(parent)
         
         # Find all image files (recursively if enabled)
-        self.image_files = []
-        for ext in ['.jpg', '.jpeg', '.png', '.heic', '.JPG', '.JPEG', '.PNG', '.HEIC']:
-            if recurse_folders:
-                self.image_files.extend(self.input_folder.rglob(f'*{ext}'))
-            else:
-                self.image_files.extend(self.input_folder.glob(f'*{ext}'))
+        supported_image_extensions = {'.jpg', '.jpeg', '.png', '.heic'}
+        if recurse_folders:
+            self.image_files = [f for f in self.input_folder.rglob("*") if f.is_file() and f.suffix.lower() in supported_image_extensions]
+        else:
+            self.image_files = [f for f in self.input_folder.glob("*") if f.is_file() and f.suffix.lower() in supported_image_extensions]
         
         # Check if we should sort by filename instead of date
         sort_by_filename = parent.config_data.get("sort_by_filename", False)
