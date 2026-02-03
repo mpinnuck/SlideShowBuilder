@@ -178,6 +178,7 @@ def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, dura
     mux_cmd = [
         FFmpegPaths.ffmpeg(), "-y",
         "-hide_banner", "-loglevel", "error",
+        "-progress", "pipe:2",  # Send progress to stderr
         "-i", str(video_only_path),
         "-stream_loop", "-1",  # Loop audio indefinitely
         "-i", str(soundtrack_path),
@@ -197,10 +198,32 @@ def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, dura
         str(output_path)
     ])
     
-    result = subprocess.run(mux_cmd, capture_output=True, text=True)
-    if result.returncode != 0:
+    # Run with progress monitoring
+    import re
+    process = subprocess.Popen(mux_cmd, stderr=subprocess.PIPE, text=True, bufsize=1)
+    
+    # Parse progress from stderr
+    time_pattern = re.compile(r'out_time_ms=(\d+)')
+    last_progress_update = 0
+    
+    for line in process.stderr:
+        # Parse time from ffmpeg progress output
+        match = time_pattern.search(line)
+        if match and progress_callback:
+            current_time_us = int(match.group(1))
+            current_time_s = current_time_us / 1_000_000
+            
+            # Update progress every 5 seconds to avoid spam
+            if current_time_s - last_progress_update >= 5:
+                percent = min(100, (current_time_s / duration) * 100)
+                progress_callback(f"[Slideshow] Muxing soundtrack... {percent:.1f}%")
+                last_progress_update = current_time_s
+    
+    process.wait()
+    
+    if process.returncode != 0:
         if progress_callback:
-            progress_callback(f"Error muxing soundtrack: {result.stderr}")
+            progress_callback(f"Error muxing soundtrack")
         return False
     
     # if progress_callback:

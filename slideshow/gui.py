@@ -1602,6 +1602,34 @@ class ImageRotatorDialog:
                     except Exception:
                         pass  # Fall back to file timestamp
                 
+                # For videos, try to get creation date from metadata
+                elif ext in ('.mp4', '.mov', '.avi', '.mkv', '.m4v'):
+                    try:
+                        import subprocess
+                        import json
+                        import datetime as dt
+                        
+                        # Use ffprobe to get creation time
+                        result = subprocess.run([
+                            'ffprobe', '-v', 'quiet', '-print_format', 'json',
+                            '-show_format', str(path)
+                        ], capture_output=True, text=True, timeout=5)
+                        
+                        if result.returncode == 0:
+                            metadata = json.loads(result.stdout)
+                            creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
+                            if creation_time:
+                                # Handle various ISO 8601 formats
+                                for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
+                                    try:
+                                        dt_obj = dt.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
+                                        timestamp = dt_obj.timestamp()
+                                        break
+                                    except ValueError:
+                                        continue
+                    except Exception:
+                        pass  # Fall back to file timestamp
+                
                 timestamp_cache[path] = timestamp
                 return timestamp
             
