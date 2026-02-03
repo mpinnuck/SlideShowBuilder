@@ -2,7 +2,7 @@
 Build commands:
 source .venv/bin/activate
 pyinstaller -y "SlideShow Builder.spec"
-
+cp -R "dist/SlideShow Builder.app" /Applications/
 '''
 
 
