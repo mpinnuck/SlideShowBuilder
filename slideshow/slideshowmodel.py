@@ -153,93 +153,107 @@ class Slideshow:
             all_files_list = [f for f in input_folder.rglob("*") if f.is_file()]
         else:
             all_files_list = [f for f in input_folder.glob("*") if f.is_file()]
-        total_files = len(all_files_list)
         
-        # Sort with cached timestamps (progress shown during EXIF extraction)
-        self._log(f"[Slideshow] Sorting {total_files} files by date taken...")
-        timestamp_cache = {}
-        files_processed = [0]  # Use list to allow modification in nested function
+        self._log(f"[Slideshow] Found {len(all_files_list)} total files")
         
-        def get_file_timestamp(path: Path) -> float:
-            """Get timestamp for sorting: EXIF date for photos, creation/modification time for others"""
-            if path in timestamp_cache:
-                return timestamp_cache[path]
-            
-            ext = path.suffix.lower()
-            stat = path.stat()
-            
-            # Default fallback: try creation time first (st_birthtime on macOS), then modification time
-            timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
-            
-            # For photos, try to get EXIF date
-            if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
-                try:
-                    from PIL import Image
-                    from PIL.ExifTags import TAGS
-                    import datetime
-                    
-                    with Image.open(path) as img:
-                        exif = img._getexif()
-                        if exif:
-                            for tag_id, value in exif.items():
-                                tag_name = TAGS.get(tag_id, tag_id)
-                                if tag_name == 'DateTimeOriginal':
-                                    dt = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                                    timestamp = dt.timestamp()
-                                    break
-                except Exception:
-                    pass  # Use creation/modification time fallback
-            
-            # For videos, try to get creation date from metadata
-            elif ext in ('.mp4', '.mov'):
-                try:
-                    import subprocess
-                    import json
-                    
-                    # Use ffprobe to get creation time
-                    result = subprocess.run([
-                        'ffprobe', '-v', 'quiet', '-print_format', 'json',
-                        '-show_format', str(path)
-                    ], capture_output=True, text=True, timeout=5)
-                    
-                    if result.returncode == 0:
-                        metadata = json.loads(result.stdout)
-                        creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
-                        if creation_time:
-                            import datetime
-                            # Handle various ISO 8601 formats
-                            for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
-                                try:
-                                    dt = datetime.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
-                                    timestamp = dt.timestamp()
-                                    break
-                                except ValueError:
-                                    continue
-                except Exception:
-                    pass  # Use creation/modification time fallback
-            
-            timestamp_cache[path] = timestamp
-            files_processed[0] += 1
-            
-            # Progress every 100 files
-            if files_processed[0] % 100 == 0:
-                self._log(f"[Slideshow] Sorting {files_processed[0]}/{total_files} files by date taken...\r")
-            
-            return timestamp
-        
-        all_files = sorted(all_files_list, key=get_file_timestamp)
-        self._log(f"[Slideshow] Sorted {total_files} files by date taken")
-        # Filter to only supported media files (whitelist approach)
+        # Filter to only supported media files BEFORE sorting (more efficient)
         # Photos: JPEG, PNG, HEIC/HEIF
         # Videos: MP4, MOV
         supported_extensions = {'.jpg', '.jpeg', '.png', '.heic', '.heif', '.mp4', '.mov'}
         ignored_names = {'.ds_store', 'thumbs.db', 'desktop.ini'}
-        media_files = [
-            f for f in all_files 
+        all_files_list = [
+            f for f in all_files_list 
             if f.suffix.lower() in supported_extensions
             and f.name.lower() not in ignored_names
-            and f.is_file()
         ]
+        total_files = len(all_files_list)
+        
+        # Check if we should sort by filename instead of date
+        sort_by_filename = self.config.get("sort_by_filename", False)
+        
+        if sort_by_filename:
+            # Sort alphabetically by filename (no EXIF extraction needed)
+            self._log(f"[Slideshow] Sorting {total_files} files by filename...")
+            all_files = sorted(all_files_list, key=lambda p: p.name.lower())
+            self._log(f"[Slideshow] Sorted {total_files} files by filename")
+        else:
+            # Sort with cached timestamps (progress shown during EXIF extraction)
+            self._log(f"[Slideshow] Sorting {total_files} files by date taken...")
+            timestamp_cache = {}
+            files_processed = [0]  # Use list to allow modification in nested function
+            
+            def get_file_timestamp(path: Path) -> float:
+                """Get timestamp for sorting: EXIF date for photos, creation/modification time for others"""
+                if path in timestamp_cache:
+                    return timestamp_cache[path]
+                
+                ext = path.suffix.lower()
+                stat = path.stat()
+                
+                # Default fallback: try creation time first (st_birthtime on macOS), then modification time
+                timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
+                
+                # For photos, try to get EXIF date
+                if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
+                    try:
+                        from PIL import Image
+                        from PIL.ExifTags import TAGS
+                        import datetime
+                        
+                        with Image.open(path) as img:
+                            exif = img._getexif()
+                            if exif:
+                                for tag_id, value in exif.items():
+                                    tag_name = TAGS.get(tag_id, tag_id)
+                                    if tag_name == 'DateTimeOriginal':
+                                        dt = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+                                        timestamp = dt.timestamp()
+                                        break
+                    except Exception:
+                        pass  # Use creation/modification time fallback
+                
+                # For videos, try to get creation date from metadata
+                elif ext in ('.mp4', '.mov'):
+                    try:
+                        import subprocess
+                        import json
+                        
+                        # Use ffprobe to get creation time
+                        result = subprocess.run([
+                            'ffprobe', '-v', 'quiet', '-print_format', 'json',
+                            '-show_format', str(path)
+                        ], capture_output=True, text=True, timeout=5)
+                        
+                        if result.returncode == 0:
+                            metadata = json.loads(result.stdout)
+                            creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
+                            if creation_time:
+                                import datetime
+                                # Handle various ISO 8601 formats
+                                for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
+                                    try:
+                                        dt = datetime.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
+                                        timestamp = dt.timestamp()
+                                        break
+                                    except ValueError:
+                                        continue
+                    except Exception:
+                        pass  # Use creation/modification time fallback
+                
+                timestamp_cache[path] = timestamp
+                files_processed[0] += 1
+                
+                # Progress every 100 files
+                if files_processed[0] % 100 == 0:
+                    self._log(f"[Slideshow] Sorting {files_processed[0]}/{total_files} files by date taken...\r")
+                
+                return timestamp
+            
+            all_files = sorted(all_files_list, key=get_file_timestamp)
+            self._log(f"[Slideshow] Sorted {total_files} files by date taken\r")
+        
+        # Use the filtered and sorted files
+        media_files = all_files
         
         skip_until = 0  # Track files consumed by MultiSlides
         

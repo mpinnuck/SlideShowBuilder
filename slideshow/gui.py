@@ -205,13 +205,7 @@ class GUI(tk.Tk):
         ttk.Label(self, text="Project Path:").grid(row=1, column=0, sticky="e")
         self.project_path_var = tk.StringVar(value="")
         path_label = ttk.Label(self, textvariable=self.project_path_var, foreground="gray")
-        path_label.grid(row=1, column=1, sticky="w", padx=(5, 0))
-        
-        # Recurse checkbox (between path and browse button)
-        self.recurse_var = tk.BooleanVar(value=self.config_data.get("recurse_folders", False))
-        self.recurse_var.trace_add('write', lambda *args: self._auto_save_config())
-        recurse_check = ttk.Checkbutton(self, text="Recurse", variable=self.recurse_var)
-        recurse_check.grid(row=1, column=1, sticky="e", padx=(0, 5))
+        path_label.grid(row=1, column=1, columnspan=2, sticky="w", padx=(5, 0))
         
         ttk.Button(self, text="Browse", command=self.select_slideshows_folder).grid(row=1, column=2)
 
@@ -253,6 +247,23 @@ class GUI(tk.Tk):
         self.transition_combo = ttk.Combobox(self, textvariable=self.transition_var, width=12, state="readonly")
         self.transition_combo.grid(row=5, column=1, sticky="w", padx=(150, 0))
         self._populate_transitions()
+        
+        # Checkboxes frame (to the right of transition)
+        options_frame = ttk.Frame(self)
+        options_frame.grid(row=5, column=1, columnspan=2, sticky="e", padx=(0, 5))
+        
+        # Sort by filename checkbox (leftmost)
+        self.sort_by_filename_var = tk.BooleanVar(value=self.config_data.get("sort_by_filename", False))
+        self.sort_by_filename_var.trace_add('write', lambda *args: self._auto_save_config())
+        sort_by_filename_check = ttk.Checkbutton(options_frame, text="Sort by Filename", 
+                                                   variable=self.sort_by_filename_var)
+        sort_by_filename_check.grid(row=0, column=0, sticky="w", padx=(0, 10))
+        
+        # Recurse checkbox (rightmost)
+        self.recurse_var = tk.BooleanVar(value=self.config_data.get("recurse_folders", False))
+        self.recurse_var.trace_add('write', lambda *args: self._auto_save_config())
+        recurse_check = ttk.Checkbutton(options_frame, text="Recurse", variable=self.recurse_var)
+        recurse_check.grid(row=0, column=1, sticky="w")
 
         ttk.Label(self, text="Video Duration (s):").grid(row=6, column=0, sticky="e")
         self.video_dur_var = tk.IntVar(value=self.config_data.get("video_duration", 10))
@@ -922,6 +933,7 @@ class GUI(tk.Tk):
         
         config["video_quality"] = self.video_quality_var.get()
         config["recurse_folders"] = self.recurse_var.get()
+        config["sort_by_filename"] = self.sort_by_filename_var.get()
         
         return config
     
@@ -1548,44 +1560,52 @@ class ImageRotatorDialog:
             else:
                 self.image_files.extend(self.input_folder.glob(f'*{ext}'))
         
-        # Sort by date taken (same as slideshow) - cache timestamps for performance
-        timestamp_cache = {}
+        # Check if we should sort by filename instead of date
+        sort_by_filename = parent.config_data.get("sort_by_filename", False)
+        older_images_no_exif = parent.config_data.get("older_images_no_exif", False)
         
-        def get_file_timestamp(path: Path) -> float:
-            """Get timestamp for sorting: EXIF date for photos, creation/modification time for others"""
-            if path in timestamp_cache:
-                return timestamp_cache[path]
+        if sort_by_filename:
+            # Sort alphabetically by filename
+            self.image_files = sorted(self.image_files, key=lambda p: p.name.lower())
+        else:
+            # Sort by date taken (same as slideshow) - cache timestamps for performance
+            timestamp_cache = {}
             
-            ext = path.suffix.lower()
-            stat = path.stat()
+            def get_file_timestamp(path: Path) -> float:
+                """Get timestamp for sorting: EXIF date for photos, creation/modification time for others"""
+                if path in timestamp_cache:
+                    return timestamp_cache[path]
+                
+                ext = path.suffix.lower()
+                stat = path.stat()
+                
+                # Default fallback: try creation time first (st_birthtime on macOS), then modification time
+                timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
+                
+                # For photos, try to get EXIF date (skip if user indicated older images don't have EXIF)
+                if ext in ('.jpg', '.jpeg', '.heic', '.heif') and not older_images_no_exif:
+                    try:
+                        from PIL import Image
+                        from PIL.ExifTags import TAGS
+                        import datetime as dt
+                        
+                        img = Image.open(path)
+                        exif_data = img._getexif()
+                        if exif_data:
+                            for tag_id, value in exif_data.items():
+                                tag = TAGS.get(tag_id, tag_id)
+                                if tag == 'DateTimeOriginal':
+                                    # Parse EXIF date format: "2023:12:25 14:30:45"
+                                    date_obj = dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+                                    timestamp = date_obj.timestamp()
+                                    break
+                    except Exception:
+                        pass  # Fall back to file timestamp
+                
+                timestamp_cache[path] = timestamp
+                return timestamp
             
-            # Default fallback: try creation time first (st_birthtime on macOS), then modification time
-            timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
-            
-            # For photos, try to get EXIF date
-            if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
-                try:
-                    from PIL import Image
-                    from PIL.ExifTags import TAGS
-                    import datetime as dt
-                    
-                    img = Image.open(path)
-                    exif_data = img._getexif()
-                    if exif_data:
-                        for tag_id, value in exif_data.items():
-                            tag = TAGS.get(tag_id, tag_id)
-                            if tag == 'DateTimeOriginal':
-                                # Parse EXIF date format: "2023:12:25 14:30:45"
-                                date_obj = dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                                timestamp = date_obj.timestamp()
-                                break
-                except Exception:
-                    pass  # Fall back to file timestamp
-            
-            timestamp_cache[path] = timestamp
-            return timestamp
-        
-        self.image_files = sorted(self.image_files, key=get_file_timestamp)
+            self.image_files = sorted(self.image_files, key=get_file_timestamp)
         
         if not self.image_files:
             recurse_msg = " (including subdirectories)" if recurse_folders else ""
