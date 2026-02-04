@@ -6,10 +6,11 @@ from slideshow.transitions.utils import extract_frame, load_and_resize_image, ge
 
 
 class SlideItem(ABC):
-    def __init__(self, path: Path, duration: float, resolution=(1920, 1080)):
+    def __init__(self, path: Path, duration: float, resolution=(1920, 1080), creation_date: float = None):
         self.path = path
         self.duration = duration
         self.resolution = resolution
+        self.creation_date = creation_date  # Timestamp, read once from EXIF/file stats
         self._to_image: Optional[Image.Image] = None
         self._from_image: Optional[Image.Image] = None
         self._rendered_clip: Optional[Path] = None

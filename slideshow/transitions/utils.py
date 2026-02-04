@@ -119,6 +119,10 @@ def save_frames_as_video(frames, output_path, fps=25):
     with tempfile.TemporaryDirectory() as tmp:
         for i, frame in enumerate(frames):
             Image.fromarray(frame, "RGB").save(f"{tmp}/frame_{i:06d}.png")
+        
+        # Calculate exact duration from frame count and FPS
+        duration = len(frames) / fps
+        
         cmd = [
             FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
             "-r", str(fps),
@@ -126,7 +130,9 @@ def save_frames_as_video(frames, output_path, fps=25):
         ]
         cmd.extend(cfg.get_ffmpeg_encoding_params())  # Use project quality settings
         cmd.extend([
-            "-pix_fmt", "yuv420p", 
+            "-pix_fmt", "yuv420p",
+            "-t", f"{duration:.3f}",  # Explicit duration for proper metadata
+            "-movflags", "+faststart",  # Optimize for streaming/concatenation
             str(output_path)
         ])
         subprocess.run(cmd, check=True, capture_output=True)  # Suppress verbose output
@@ -198,26 +204,14 @@ def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, dura
         str(output_path)
     ])
     
-    # Run with progress monitoring
+    # Run with progress monitoring (silent - progress shown via progress bar, not log)
     import re
     process = subprocess.Popen(mux_cmd, stderr=subprocess.PIPE, text=True, bufsize=1)
     
-    # Parse progress from stderr
-    time_pattern = re.compile(r'out_time_ms=(\d+)')
-    last_progress_update = 0
-    
+    # Parse progress from stderr to keep progress bar active
+    # (don't print to log - that would spam the console)
     for line in process.stderr:
-        # Parse time from ffmpeg progress output
-        match = time_pattern.search(line)
-        if match and progress_callback:
-            current_time_us = int(match.group(1))
-            current_time_s = current_time_us / 1_000_000
-            
-            # Update progress every 5 seconds to avoid spam
-            if current_time_s - last_progress_update >= 5:
-                percent = min(100, (current_time_s / duration) * 100)
-                progress_callback(f"[Slideshow] Muxing soundtrack... {percent:.1f}%")
-                last_progress_update = current_time_s
+        pass  # Just consume the output to prevent blocking
     
     process.wait()
     

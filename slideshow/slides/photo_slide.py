@@ -9,9 +9,9 @@ from slideshow.transitions.ffmpeg_cache import FFmpegCache
 
 
 class PhotoSlide(SlideItem):
-    def __init__(self, path: Path, duration: float, fps: int = None, resolution: tuple = None):
+    def __init__(self, path: Path, duration: float, fps: int = None, resolution: tuple = None, creation_date: float = None):
         resolution = resolution if resolution is not None else tuple(DEFAULT_CONFIG["resolution"])
-        super().__init__(path, duration, resolution)
+        super().__init__(path, duration, resolution, creation_date)
         self.fps = fps if fps is not None else DEFAULT_CONFIG["fps"]
 
     def render(self, working_dir: Path, log_callback=None, progress_callback=None):
@@ -89,17 +89,39 @@ class PhotoSlide(SlideItem):
         right = target_w - new_w - left
         framed = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-        # --- Write CFR video ---
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')
-        out = cv2.VideoWriter(str(clip_path), fourcc, self.fps, (target_w, target_h))
+        # --- Write CFR video using FFmpeg for proper metadata ---
+        # Save the framed image as a temporary PNG
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+            temp_png = Path(tmp_file.name)
+        
+        cv2.imwrite(str(temp_png), framed)
+        
+        # Use FFmpeg to create the video with proper duration metadata
+        from slideshow.transitions.ffmpeg_paths import FFmpegPaths
+        import subprocess
+        
         total_frames = int(self.fps * self.duration)
-
-        for i in range(total_frames):
-            out.write(framed)
-            if progress_callback and (i % max(total_frames // 10, 1) == 0):
-                progress_callback(i / total_frames)
-
-        out.release()
+        
+        ffmpeg_cmd = [
+            FFmpegPaths.ffmpeg(), "-y",
+            "-loop", "1",
+            "-i", str(temp_png),
+            "-t", f"{self.duration:.3f}",
+            "-r", str(self.fps),
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(clip_path)
+        ]
+        
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        
+        # Clean up temp file
+        temp_png.unlink(missing_ok=True)
+        
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg failed for photo slide {self.path}:\n{result.stderr}")
 
         # Store result in cache for future use
         FFmpegCache.store_clip(self.path, cache_params, clip_path)

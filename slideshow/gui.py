@@ -126,6 +126,7 @@ class GUI(tk.Tk):
         # Load config - will try to load from last project
         self.config_data = load_config()
         self.cancel_requested = False  # Flag for cancellation
+        self.cached_slides = None  # Cache slides from export to reuse in preview
         self.create_widgets()
         self.center_window()
         
@@ -212,6 +213,7 @@ class GUI(tk.Tk):
         # Input Folder (now row 2)
         ttk.Label(self, text="Input Folder:").grid(row=2, column=0, sticky="e")
         self.input_var = tk.StringVar(value=self.config_data.get("input_folder", ""))
+        self.input_var.trace_add('write', lambda *args: self._invalidate_slide_cache())
         self.input_var.trace_add('write', lambda *args: self._auto_save_config())
         ttk.Entry(self, textvariable=self.input_var, width=40).grid(row=2, column=1, sticky="we")
         ttk.Button(self, text="Browse", command=self.select_input_folder).grid(row=2, column=2)
@@ -254,6 +256,7 @@ class GUI(tk.Tk):
         
         # Sort by filename checkbox (leftmost)
         self.sort_by_filename_var = tk.BooleanVar(value=self.config_data.get("sort_by_filename", False))
+        self.sort_by_filename_var.trace_add('write', lambda *args: self._invalidate_slide_cache())
         self.sort_by_filename_var.trace_add('write', lambda *args: self._auto_save_config())
         sort_by_filename_check = ttk.Checkbutton(options_frame, text="Sort by Filename", 
                                                    variable=self.sort_by_filename_var)
@@ -261,6 +264,7 @@ class GUI(tk.Tk):
         
         # Recurse checkbox (rightmost)
         self.recurse_var = tk.BooleanVar(value=self.config_data.get("recurse_folders", False))
+        self.recurse_var.trace_add('write', lambda *args: self._invalidate_slide_cache())
         self.recurse_var.trace_add('write', lambda *args: self._auto_save_config())
         recurse_check = ttk.Checkbutton(options_frame, text="Recurse", variable=self.recurse_var)
         recurse_check.grid(row=0, column=1, sticky="w")
@@ -1265,6 +1269,9 @@ class GUI(tk.Tk):
             slideshow = Slideshow(self.config_data, log_callback=self._on_log_message, progress_callback=self._on_progress)
             slideshow.cancel_check = lambda: self.cancel_requested
             
+            # Cache the slides for preview reuse
+            self.cached_slides = slideshow.slides
+            
             # Render the slideshow
             slideshow.render(output_path)
             
@@ -1534,17 +1541,193 @@ class GUI(tk.Tk):
             wide_messagebox("error", "Error", "Input folder does not exist.")
             return
         
-        ImageRotatorDialog(self)
+        # Load and cache slides if not already loaded
+        if not self.cached_slides:
+            self._load_and_cache_slides()
+        
+        # Extract image paths from cached slides (filter out video slides)
+        if self.cached_slides:
+            from slideshow.slides.photo_slide import PhotoSlide
+            sorted_files = [slide.path for slide in self.cached_slides if isinstance(slide, PhotoSlide)]
+            if sorted_files:
+                ImageRotatorDialog(self, sorted_files)
+                return
+        
+        # Should not reach here, but fallback just in case
+        wide_messagebox("error", "Error", "Failed to load image files.")
+    
+    def _load_and_cache_slides(self):
+        """Load slides using slideshow logic and cache them for reuse"""
+        # Show a loading dialog
+        loading_dialog = tk.Toplevel(self)
+        loading_dialog.title("Loading Images")
+        loading_dialog.geometry("400x100")
+        loading_dialog.transient(self)
+        
+        # Center the dialog on screen
+        loading_dialog.update_idletasks()
+        width = loading_dialog.winfo_width()
+        height = loading_dialog.winfo_height()
+        x = (loading_dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (loading_dialog.winfo_screenheight() // 2) - (height // 2)
+        loading_dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        loading_label = ttk.Label(loading_dialog, text="Loading slides...", font=("Arial", 12))
+        loading_label.pack(expand=True)
+        loading_dialog.update()
+        
+        try:
+            from slideshow.slideshowmodel import Slideshow
+            
+            # Custom log callback that updates both the main log and the loading dialog
+            def loading_log_callback(msg):
+                # Update loading dialog with progress
+                if "Sorting" in msg or "Sorted" in msg:
+                    clean_msg = msg.replace("[Slideshow] ", "").rstrip("\r")
+                    loading_label.config(text=clean_msg)
+                    loading_dialog.update()
+                
+                # Also log to main window (but process it immediately)
+                self.log_message(msg)
+                # Process pending events to keep GUI responsive
+                self.update_idletasks()
+            
+            # Create a temporary slideshow just to load the slides
+            slideshow = Slideshow(self.config_data, log_callback=loading_log_callback, progress_callback=None)
+            
+            # Manually load slides with progress updates
+            slideshow.load_slides()
+            
+            # Cache the loaded slides for preview and future exports
+            self.cached_slides = slideshow.slides
+            
+            loading_dialog.destroy()
+            
+        except Exception as e:
+            loading_dialog.destroy()
+            self.log_message(f"Error loading slides: {e}")
+            self.cached_slides = None
+    
+    def _invalidate_slide_cache(self):
+        """Invalidate cached slides when input folder or sort settings change"""
+        self.cached_slides = None
+    
+    def _get_sorted_image_files(self):
+        """Get sorted list of image files using same logic as slideshow export"""
+        from pathlib import Path
+        
+        input_folder = Path(self.input_var.get().strip())
+        recurse_folders = self.config_data.get("recurse_folders", False)
+        sort_by_filename = self.config_data.get("sort_by_filename", False)
+        older_images_no_exif = self.config_data.get("older_images_no_exif", False)
+        
+        # Find all image files (same extensions as preview supports)
+        supported_image_extensions = {'.jpg', '.jpeg', '.png', '.heic'}
+        image_files = []
+        
+        # Show a loading dialog
+        loading_dialog = tk.Toplevel(self)
+        loading_dialog.title("Loading Images")
+        loading_dialog.geometry("400x100")
+        loading_dialog.transient(self)
+        
+        # Center the dialog on screen
+        loading_dialog.update_idletasks()
+        width = loading_dialog.winfo_width()
+        height = loading_dialog.winfo_height()
+        x = (loading_dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (loading_dialog.winfo_screenheight() // 2) - (height // 2)
+        loading_dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        loading_label = ttk.Label(loading_dialog, text="Finding image files...", font=("Arial", 12))
+        loading_label.pack(expand=True)
+        loading_dialog.update()
+        
+        try:
+            if recurse_folders:
+                image_files = [f for f in input_folder.rglob("*") if f.is_file() and f.suffix.lower() in supported_image_extensions]
+            else:
+                image_files = [f for f in input_folder.glob("*") if f.is_file() and f.suffix.lower() in supported_image_extensions]
+            
+            if not image_files:
+                loading_dialog.destroy()
+                recurse_msg = " (including subdirectories)" if recurse_folders else ""
+                wide_messagebox("error", "Error", f"No image files found in the input folder{recurse_msg}.")
+                return None
+            
+            loading_label.config(text=f"Found {len(image_files)} images. Sorting...")
+            loading_dialog.update()
+            
+            # Sort using the same logic as slideshow export
+            if sort_by_filename:
+                # Sort alphabetically by filename
+                image_files = sorted(image_files, key=lambda p: p.name.lower())
+            else:
+                # Sort by date taken (same as slideshow model)
+                import datetime
+                from PIL import Image
+                from PIL.ExifTags import TAGS
+                
+                timestamp_cache = {}
+                
+                def get_file_timestamp(path: Path) -> float:
+                    """Get timestamp - same logic as slideshowmodel.py"""
+                    if path in timestamp_cache:
+                        return timestamp_cache[path]
+                    
+                    ext = path.suffix.lower()
+                    stat = path.stat()
+                    timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
+                    
+                    if ext in ('.jpg', '.jpeg', '.heic', '.heif') and not older_images_no_exif:
+                        try:
+                            img = Image.open(path)
+                            exif_data = img._getexif()
+                            if exif_data:
+                                for tag_id, value in exif_data.items():
+                                    tag = TAGS.get(tag_id, tag_id)
+                                    if tag == 'DateTimeOriginal':
+                                        date_obj = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+                                        timestamp = date_obj.timestamp()
+                                        break
+                        except Exception:
+                            pass
+                    
+                    timestamp_cache[path] = timestamp
+                    return timestamp
+                
+                # Sort with progress updates
+                total = len(image_files)
+                for i, img_file in enumerate(image_files, 1):
+                    get_file_timestamp(img_file)
+                    if i % 10 == 0 or i == total:
+                        loading_label.config(text=f"Processing {i} of {total} images...")
+                        loading_dialog.update()
+                
+                loading_label.config(text=f"Sorting {total} images...")
+                loading_dialog.update()
+                
+                image_files = sorted(image_files, key=get_file_timestamp)
+            
+            loading_dialog.destroy()
+            return image_files
+            
+        except Exception as e:
+            loading_dialog.destroy()
+            wide_messagebox("error", "Error", f"Failed to load images: {e}")
+            return None
 
 
 class ImageRotatorDialog:
     """Dialog for previewing and rotating images"""
     
-    def __init__(self, parent):
+    def __init__(self, parent, sorted_image_files):
         self.parent = parent
         self.config_data = parent.config_data
         self.input_folder = Path(parent.input_var.get().strip())
-        recurse_folders = parent.config_data.get("recurse_folders", False)
+        
+        # Use pre-sorted list (already in slideshow order)
+        self.image_files = sorted_image_files
         
         # Create dialog window
         self.dialog = tk.Toplevel(parent)
@@ -1552,100 +1735,15 @@ class ImageRotatorDialog:
         self.dialog.geometry("1200x800")
         self.dialog.transient(parent)
         
-        # Find all image files (recursively if enabled)
-        supported_image_extensions = {'.jpg', '.jpeg', '.png', '.heic'}
-        if recurse_folders:
-            self.image_files = [f for f in self.input_folder.rglob("*") if f.is_file() and f.suffix.lower() in supported_image_extensions]
-        else:
-            self.image_files = [f for f in self.input_folder.glob("*") if f.is_file() and f.suffix.lower() in supported_image_extensions]
-        
-        # Check if we should sort by filename instead of date
-        sort_by_filename = parent.config_data.get("sort_by_filename", False)
-        older_images_no_exif = parent.config_data.get("older_images_no_exif", False)
-        
-        if sort_by_filename:
-            # Sort alphabetically by filename
-            self.image_files = sorted(self.image_files, key=lambda p: p.name.lower())
-        else:
-            # Sort by date taken (same as slideshow) - cache timestamps for performance
-            timestamp_cache = {}
-            
-            def get_file_timestamp(path: Path) -> float:
-                """Get timestamp for sorting: EXIF date for photos, creation/modification time for others"""
-                if path in timestamp_cache:
-                    return timestamp_cache[path]
-                
-                ext = path.suffix.lower()
-                stat = path.stat()
-                
-                # Default fallback: try creation time first (st_birthtime on macOS), then modification time
-                timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
-                
-                # For photos, try to get EXIF date (skip if user indicated older images don't have EXIF)
-                if ext in ('.jpg', '.jpeg', '.heic', '.heif') and not older_images_no_exif:
-                    try:
-                        from PIL import Image
-                        from PIL.ExifTags import TAGS
-                        import datetime as dt
-                        
-                        img = Image.open(path)
-                        exif_data = img._getexif()
-                        if exif_data:
-                            for tag_id, value in exif_data.items():
-                                tag = TAGS.get(tag_id, tag_id)
-                                if tag == 'DateTimeOriginal':
-                                    # Parse EXIF date format: "2023:12:25 14:30:45"
-                                    date_obj = dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                                    timestamp = date_obj.timestamp()
-                                    break
-                    except Exception:
-                        pass  # Fall back to file timestamp
-                
-                # For videos, try to get creation date from metadata
-                elif ext in ('.mp4', '.mov', '.avi', '.mkv', '.m4v'):
-                    try:
-                        import subprocess
-                        import json
-                        import datetime as dt
-                        
-                        # Use ffprobe to get creation time
-                        result = subprocess.run([
-                            'ffprobe', '-v', 'quiet', '-print_format', 'json',
-                            '-show_format', str(path)
-                        ], capture_output=True, text=True, timeout=5)
-                        
-                        if result.returncode == 0:
-                            metadata = json.loads(result.stdout)
-                            creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
-                            if creation_time:
-                                # Handle various ISO 8601 formats
-                                for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
-                                    try:
-                                        dt_obj = dt.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
-                                        timestamp = dt_obj.timestamp()
-                                        break
-                                    except ValueError:
-                                        continue
-                    except Exception:
-                        pass  # Fall back to file timestamp
-                
-                timestamp_cache[path] = timestamp
-                return timestamp
-            
-            self.image_files = sorted(self.image_files, key=get_file_timestamp)
-        
-        if not self.image_files:
-            recurse_msg = " (including subdirectories)" if recurse_folders else ""
-            wide_messagebox("error", "Error", f"No image files found in the input folder{recurse_msg}.")
-            self.dialog.destroy()
-            return
-        
         self.current_index = 0
         self.thumbnail_cache = {}  # Cache thumbnails for performance
         
         self._create_widgets()
-        self._center_dialog()
         self._load_image()
+        
+        # Center dialog after widgets are created and image loaded
+        self.dialog.update_idletasks()
+        self._center_dialog()
     
     def _center_dialog(self):
         """Center the dialog on the screen"""
@@ -1754,13 +1852,9 @@ class ImageRotatorDialog:
         image_path = self.image_files[self.current_index]
         filename = image_path.name
         
-        # Get creation date
-        date_str = self._get_creation_date(image_path)
-        
         # Update counter and filename
         self.counter_label.config(text=f"Image {self.current_index + 1} of {len(self.image_files)}")
         self.filename_label.config(text=filename)
-        self.date_label.config(text=date_str)
         
         # Update slider to match current index (without triggering callback)
         self.slider_var.set(self.current_index + 1)
@@ -1771,6 +1865,10 @@ class ImageRotatorDialog:
         # Load image
         try:
             img = Image.open(image_path)
+            
+            # Extract creation date from EXIF while we have the image open
+            date_str = self._extract_creation_date_from_image(img, image_path)
+            self.date_label.config(text=date_str)
             
             # Apply EXIF orientation to display portrait images correctly
             img = ImageOps.exif_transpose(img)
@@ -1830,8 +1928,8 @@ class ImageRotatorDialog:
             # Apply EXIF orientation first to get the correct base orientation
             img = ImageOps.exif_transpose(img)
             
-            # Rotate the image (PIL rotates counter-clockwise, so negate)
-            img_rotated = img.rotate(-degrees, expand=True)
+            # Rotate the image (PIL rotates counter-clockwise with positive angles)
+            img_rotated = img.rotate(degrees, expand=True)
             
             # Save back to the same file, preserving EXIF data
             if exif_data:
@@ -1852,17 +1950,16 @@ class ImageRotatorDialog:
             self.parent.log_message(f"Error rotating image {filename}: {e}")
             wide_messagebox("error", "Error", f"Failed to rotate image: {e}")
     
-    def _get_creation_date(self, image_path: Path) -> str:
-        """Get the creation date of an image (EXIF or file timestamp)"""
+    def _extract_creation_date_from_image(self, img: Image.Image, image_path: Path) -> str:
+        """Extract creation date from an already-opened image (optimized to avoid re-opening)"""
         try:
             import datetime as dt
             ext = image_path.suffix.lower()
             
-            # Try EXIF date first for photos
+            # Try EXIF date first for photos (using the already-opened image)
             if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
                 try:
                     from PIL.ExifTags import TAGS
-                    img = Image.open(image_path)
                     exif_data = img._getexif()
                     if exif_data:
                         for tag_id, value in exif_data.items():
@@ -2542,19 +2639,33 @@ Cache Status: {'Enabled' if stats['enabled'] else 'Disabled'}"""
         """Clear the entire FFmpeg cache"""
         result = wide_messagebox("question", "Clear Cache",
                                 "Are you sure you want to clear the entire FFmpeg cache?\n"
-                                "This will delete all cached video clips and frames.")
+                                "This will delete all cached video clips, frames, and slide order cache.")
         if result:
             try:
-                from slideshow.transitions.ffmpeg_cache import FFmpegCache
+                import shutil
+                from pathlib import Path
                 
-                # Cache auto-configures itself now
-                FFmpegCache.clear_cache()
-                if hasattr(self, 'parent') and hasattr(self.parent, 'log_message'):
-                    self.parent.log_message("[FFmpegCache] Cache cleared successfully")
+                # Get output folder from config
+                output_folder = Path(self.config_data.get("output_folder", ""))
+                if not output_folder or not output_folder.exists():
+                    wide_messagebox("error", "Error", "Output folder not configured")
+                    return
+                
+                # Working dir is output_folder/working
+                working_dir = output_folder / "working"
+                cache_dir = working_dir / "ffmpeg_cache"
+                
+                if cache_dir.exists():
+                    shutil.rmtree(cache_dir)
+                    if hasattr(self, 'parent') and hasattr(self.parent, 'log_message'):
+                        self.parent.log_message("[Cache] All caches cleared successfully")
+                    wide_messagebox("info", "Success", "Cache cleared successfully")
+                else:
+                    wide_messagebox("info", "Info", "Cache directory does not exist")
             except Exception as e:
                 wide_messagebox("error", "Error", f"Failed to clear cache:\n{str(e)}")
                 if hasattr(self, 'parent') and hasattr(self.parent, 'log_message'):
-                    self.parent.log_message(f"[FFmpegCache] Error clearing cache: {e}")
+                    self.parent.log_message(f"[Cache] Error clearing cache: {e}")
     
     def _cleanup_cache(self):
         """Clean up old cache entries"""

@@ -7,9 +7,9 @@ from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 
 class VideoSlide(SlideItem):
-    def __init__(self, path: Path, duration: float, fps: int = None, resolution: tuple = None):
+    def __init__(self, path: Path, duration: float, fps: int = None, resolution: tuple = None, creation_date: float = None):
         resolution = resolution if resolution is not None else tuple(DEFAULT_CONFIG["resolution"])
-        super().__init__(path, duration, resolution)
+        super().__init__(path, duration, resolution, creation_date)
         self.fps = fps if fps is not None else DEFAULT_CONFIG["fps"]
 
     def render(self, working_dir: Path, log_callback=None, progress_callback=None):
@@ -60,7 +60,7 @@ class VideoSlide(SlideItem):
                 f"scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=decrease,"
                 f"pad={self.resolution[0]}:{self.resolution[1]}:(ow-iw)/2:(oh-ih)/2:black"
             ),
-            "-t", f"{self.duration:.2f}",
+            "-t", f"{self.duration:.3f}",
             "-r", str(self.fps),
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",

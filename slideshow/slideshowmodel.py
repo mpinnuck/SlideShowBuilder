@@ -104,6 +104,80 @@ class Slideshow:
             print(msg)
 
     # -------------------------------
+    # Slide Cache Management
+    # -------------------------------
+    def _get_slide_cache_path(self) -> Path:
+        """Get the path to the slide cache file for the current project."""
+        import hashlib
+        # Create a unique cache file based on input folder and sort settings
+        input_folder = self.config.get("input_folder", "")
+        sort_key = f"{input_folder}_{self.config.get('sort_by_filename', False)}_{self.config.get('recurse_folders', False)}_{self.config.get('older_images_no_exif', False)}"
+        cache_hash = hashlib.md5(sort_key.encode()).hexdigest()[:12]
+        return self.working_dir / "ffmpeg_cache" / f"slide_order_{cache_hash}.json"
+    
+    def _save_slide_cache(self):
+        """Save slide paths to cache for faster loading next time."""
+        try:
+            import json
+            cache_path = self._get_slide_cache_path()
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save slide paths, types, and creation dates
+            slide_data = [
+                {
+                    "path": str(slide.path),
+                    "type": "photo" if isinstance(slide, PhotoSlide) else "video",
+                    "duration": slide.duration,
+                    "creation_date": slide.creation_date
+                }
+                for slide in self.slides
+            ]
+            
+            with open(cache_path, 'w') as f:
+                json.dump(slide_data, f)
+        except Exception as e:
+            self._log(f"[Slideshow] Warning: Could not save slide cache: {e}")
+    
+    def _load_slide_cache(self) -> bool:
+        """Try to load slides from cache. Returns True if successful."""
+        try:
+            import json
+            cache_path = self._get_slide_cache_path()
+            
+            if not cache_path.exists():
+                return False
+            
+            with open(cache_path, 'r') as f:
+                slide_data = json.load(f)
+            
+            # Verify all files still exist
+            for item in slide_data:
+                if not Path(item["path"]).exists():
+                    self._log(f"[Slideshow] Cache invalid: {item['path']} no longer exists")
+                    return False
+            
+            # Recreate slides from cache
+            fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
+            resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
+            
+            for item in slide_data:
+                path = Path(item["path"])
+                duration = item["duration"]
+                creation_date = item.get("creation_date")  # May be None for old cache files
+                
+                if item["type"] == "photo":
+                    self.slides.append(PhotoSlide(path, duration, fps=fps, resolution=resolution, creation_date=creation_date))
+                else:
+                    self.slides.append(VideoSlide(path, duration, fps=fps, resolution=resolution, creation_date=creation_date))
+            
+            self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache")
+            return True
+            
+        except Exception as e:
+            self._log(f"[Slideshow] Could not load slide cache: {e}")
+            return False
+
+    # -------------------------------
     # FFprobe utilities
     # -------------------------------
     def get_file_duration(self, path: Path) -> Optional[float]:
@@ -250,10 +324,13 @@ class Slideshow:
                 return timestamp
             
             all_files = sorted(all_files_list, key=get_file_timestamp)
-            self._log(f"[Slideshow] Sorted {total_files} files by date taken\r")
+            self._log(f"[Slideshow] Sorted {total_files} files by date taken")
         
         # Use the filtered and sorted files
         media_files = all_files
+        
+        # Save slide cache after sorting for next time
+        # (Will be saved again after slides are created)
         
         skip_until = 0  # Track files consumed by MultiSlides
         
@@ -273,6 +350,9 @@ class Slideshow:
                 
             ext = path.suffix.lower()
             
+            # Get timestamp for this file from cache
+            timestamp = timestamp_cache.get(path, path.stat().st_mtime)
+            
             # Check if we should create a multislide at this position
             # Trigger: Every 5 slides (e.g., at indices 5, 10, 15, ...)
             if (multislide_frequency > 0 and 
@@ -287,11 +367,11 @@ class Slideshow:
                 
                 from slideshow.slides.multi_slide import MultiSlide
                 multi_slide = MultiSlide(
-                    i=i,
-                    media_files=media_files,
+                    media_files=next_files,
                     duration=self.config["photo_duration"],
                     resolution=resolution,
-                    fps=fps
+                    fps=fps,
+                    creation_date=timestamp
                 )
                 self.slides.append(multi_slide)
                 
@@ -311,7 +391,7 @@ class Slideshow:
                 resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
                 fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
                 
-                self.slides.append(PhotoSlide(path, self.config["photo_duration"], fps=fps, resolution=resolution))
+                self.slides.append(PhotoSlide(path, self.config["photo_duration"], fps=fps, resolution=resolution, creation_date=timestamp))
                 photo_count += 1
             elif ext in (".mp4", ".mov"):
                 video_duration_setting = self.config.get("video_duration", 5.0)
@@ -329,7 +409,7 @@ class Slideshow:
                 
                 if video_duration_setting == -1:
                     self._log(f"[Slideshow] Using full duration for {path.name}: {actual_duration:.2f}s")
-                    self.slides.append(VideoSlide(path, actual_duration, fps=fps, resolution=resolution))
+                    self.slides.append(VideoSlide(path, actual_duration, fps=fps, resolution=resolution, creation_date=timestamp))
                     video_count += 1
                 else:
                     # Force last video to play full duration for a natural, complete ending
@@ -337,7 +417,7 @@ class Slideshow:
                     is_last_file = (i == len(media_files) - 1)
                     final_duration = actual_duration if is_last_file else min(video_duration_setting, actual_duration)
                     
-                    self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution))
+                    self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution, creation_date=timestamp))
                     video_count += 1
             
             # Show progress every 10 files
@@ -350,6 +430,9 @@ class Slideshow:
         single_photo_slides = (photo_count - (multislide_count * 3))  # Photos not in MultiSlides
         
         self._log(f"[Slideshow] Importing {total_input_files} files → {total_slides} slides: {single_photo_slides} photo, {video_count} video, {multislide_count} multi")
+        
+        # Save slide list to cache for faster loading next time
+        self._save_slide_cache()
         
         # Removed self.update_transitions() from here to decouple transitions from slide loading
         # Transitions should be updated explicitly when needed, such as during export or transition type change.
@@ -607,6 +690,20 @@ class Slideshow:
     def get_cache_stats(self) -> dict:
         """Get FFmpeg cache statistics."""
         return FFmpegCache.get_cache_stats()
+    
+    def get_cache_dir(self) -> Path:
+        """Get the cache directory path."""
+        return self.working_dir / "ffmpeg_cache"
+    
+    def _clear_slide_cache(self):
+        """Clear the slide order cache file."""
+        try:
+            cache_path = self._get_slide_cache_path()
+            if cache_path.exists():
+                cache_path.unlink()
+                self._log(f"[Cache] Slide order cache cleared: {cache_path.name}")
+        except Exception as e:
+            self._log(f"[Cache] Error clearing slide cache: {e}")
     
     def clear_cache(self):
         """Clear the FFmpeg cache."""

@@ -19,25 +19,24 @@ from slideshow.transitions.utils import get_video_duration
 
 
 class MultiSlide(SlideItem):
-    def __init__(self, i, media_files, duration: float, resolution=(1920, 1080), fps=30):
+    def __init__(self, media_files, duration: float, resolution=(1920, 1080), fps=30, creation_date: float = None):
         """
-        Create a MultiSlide from a starting index and media files list.
+        Create a MultiSlide from a list of media files (exactly 3).
         
         Args:
-            i: Starting index in media_files
-            media_files: List of media file paths
+            media_files: List of exactly 3 media file paths to composite
             duration: Duration for the slide
             resolution: Output resolution
             fps: Frame rate for video rendering
+            creation_date: Creation timestamp of the first image
         """
         # Initialize super class with the first image path
-        super().__init__(media_files[i], duration, resolution)
+        super().__init__(media_files[0], duration, resolution, creation_date)
         
-        self.index = i
         self.media_files = media_files
         self.fps = fps
         self.composite_image = None
-        self.slide_count = 3  # Hard coded initially
+        self.slide_count = len(media_files)  # Should be 3
         
     def get_slide_count(self):
         """Return the number of slides consumed by this MultiSlide."""
@@ -48,8 +47,8 @@ class MultiSlide(SlideItem):
         MultiSlide orientation is determined by the main image (first slide).
         """
         try:
-            if self.index < len(self.media_files):
-                main_file = self.media_files[self.index]
+            if len(self.media_files) > 0:
+                main_file = self.media_files[0]
                 if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
                     with Image.open(main_file) as img:
                         # Apply EXIF orientation to get correct dimensions
@@ -77,22 +76,21 @@ class MultiSlide(SlideItem):
         return False
         
     def _create_composite(self):
-        """Create the composite image from the media files starting at index."""
-        # Load the next 3 images starting from our index
+        """Create the composite image from the provided media files (exactly 3)."""
+        # Load the 3 images from our media_files list
         images = []
-        for j in range(3):
-            if self.index + j < len(self.media_files):
-                file_path = self.media_files[self.index + j]
-                # Only load image files
-                if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
-                    img = Image.open(file_path)
-                    # Apply EXIF orientation to display correctly
-                    img = ImageOps.exif_transpose(img)
-                    # Convert to RGB if needed
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    
-                    images.append(img)
+        for j in range(len(self.media_files)):
+            file_path = self.media_files[j]
+            # Only load image files
+            if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
+                img = Image.open(file_path)
+                # Apply EXIF orientation to display correctly
+                img = ImageOps.exif_transpose(img)
+                # Convert to RGB if needed
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                images.append(img)
         
         if len(images) < 3:
             raise ValueError("MultiSlide requires at least 3 image files")
@@ -357,11 +355,8 @@ class MultiSlide(SlideItem):
         if log_callback:
             log_callback(f"[MultiSlide] Rendering composite video with dynamic frames")
         
-        # Get the media files for this multislide
-        media_paths = []
-        for j in range(self.slide_count):
-            if self.index + j < len(self.media_files):
-                media_paths.append(self.media_files[self.index + j])
+        # Get the media files for this multislide (should be exactly 3)
+        media_paths = self.media_files
         
         if len(media_paths) < 3:
             raise ValueError("MultiSlide requires at least 3 media files")
@@ -399,7 +394,9 @@ class MultiSlide(SlideItem):
             # Create a unique output filename in working directory
             import hashlib
             param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
-            clip_path = working_dir / f"multi_{self.index}_{param_hash}.mp4"
+            # Use first filename as identifier instead of index
+            first_file_stem = Path(self.media_files[0]).stem
+            clip_path = working_dir / f"multi_{first_file_stem}_{param_hash}.mp4"
             self._rendered_clip = clip_path
             
             # Copy cached clip to working directory
@@ -410,7 +407,9 @@ class MultiSlide(SlideItem):
         # Create a unique output filename based on parameters
         import hashlib
         param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
-        clip_path = working_dir / f"multi_{self.index}_{param_hash}.mp4"
+        # Use first filename as identifier instead of index
+        first_file_stem = Path(self.media_files[0]).stem
+        clip_path = working_dir / f"multi_{first_file_stem}_{param_hash}.mp4"
         self._rendered_clip = clip_path
         
         # NEW APPROACH: Use FFmpeg to composite everything in ONE pass
