@@ -119,22 +119,40 @@ class Slideshow:
         """Save slide paths to cache for faster loading next time."""
         try:
             import json
+            from slideshow.slides.multi_slide import MultiSlide
+            
             cache_path = self._get_slide_cache_path()
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Save slide paths, types, and creation dates
-            slide_data = [
-                {
-                    "path": str(slide.path),
-                    "type": "photo" if isinstance(slide, PhotoSlide) else "video",
-                    "duration": slide.duration,
-                    "creation_date": slide.creation_date
-                }
-                for slide in self.slides
-            ]
+            slide_data = []
+            for slide in self.slides:
+                if isinstance(slide, MultiSlide):
+                    # Save MultiSlide with all component files
+                    slide_data.append({
+                        "path": str(slide.path),  # First image path
+                        "type": "multi",
+                        "duration": slide.duration,
+                        "creation_date": slide.creation_date,
+                        "media_files": [str(p) for p in slide.media_files]
+                    })
+                elif isinstance(slide, PhotoSlide):
+                    slide_data.append({
+                        "path": str(slide.path),
+                        "type": "photo",
+                        "duration": slide.duration,
+                        "creation_date": slide.creation_date
+                    })
+                else:  # VideoSlide
+                    slide_data.append({
+                        "path": str(slide.path),
+                        "type": "video",
+                        "duration": slide.duration,
+                        "creation_date": slide.creation_date
+                    })
             
             with open(cache_path, 'w') as f:
-                json.dump(slide_data, f)
+                json.dump(slide_data, f, indent=2)
         except Exception as e:
             self._log(f"[Slideshow] Warning: Could not save slide cache: {e}")
     
@@ -150,27 +168,67 @@ class Slideshow:
             with open(cache_path, 'r') as f:
                 slide_data = json.load(f)
             
-            # Verify all files still exist
-            for item in slide_data:
-                if not Path(item["path"]).exists():
-                    self._log(f"[Slideshow] Cache invalid: {item['path']} no longer exists")
-                    return False
-            
-            # Recreate slides from cache
+            # Recreate slides from cache, skipping any with missing files
             fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
             resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
+            skipped = 0
             
             for item in slide_data:
                 path = Path(item["path"])
+                
+                # Check if files exist
+                skip_this_slide = False
+                if item["type"] == "multi":
+                    # For MultiSlide, check all component files
+                    media_files = [Path(p) for p in item.get("media_files", [])]
+                    if not all(p.exists() for p in media_files):
+                        skip_this_slide = True
+                else:
+                    # For PhotoSlide/VideoSlide, check the main file
+                    if not path.exists():
+                        skip_this_slide = True
+                
+                if skip_this_slide:
+                    skipped += 1
+                    continue
+                
+                # Validate type matches file extension (catch cache corruption)
+                ext = path.suffix.lower()
+                cached_type = item["type"]
+                if cached_type == "photo" and ext not in ['.jpg', '.jpeg', '.png', '.heic', '.heif']:
+                    skipped += 1
+                    continue
+                if cached_type == "video" and ext not in ['.mp4', '.mov']:
+                    skipped += 1
+                    continue
+                
+                # Create the slide
                 duration = item["duration"]
-                creation_date = item.get("creation_date")  # May be None for old cache files
+                creation_date = item.get("creation_date")
                 
                 if item["type"] == "photo":
                     self.slides.append(PhotoSlide(path, duration, fps=fps, resolution=resolution, creation_date=creation_date))
-                else:
+                elif item["type"] == "video":
                     self.slides.append(VideoSlide(path, duration, fps=fps, resolution=resolution, creation_date=creation_date))
+                elif item["type"] == "multi":
+                    # Recreate MultiSlide from cached data
+                    from slideshow.slides.multi_slide import MultiSlide
+                    media_files = [Path(p) for p in item.get("media_files", [])]
+                    if media_files:
+                        multi_slide = MultiSlide(
+                            media_files=media_files,
+                            duration=duration,
+                            resolution=resolution,
+                            fps=fps,
+                            creation_date=creation_date
+                        )
+                        self.slides.append(multi_slide)
             
-            self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache")
+            if skipped > 0:
+                self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache ({skipped} deleted files skipped)")
+            else:
+                self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache")
+            
             return True
             
         except Exception as e:
@@ -211,6 +269,15 @@ class Slideshow:
         if not input_folder.exists():
             self._log(f"[Slideshow] Input folder not found: {input_folder}")
             return
+
+        # Try to load from cache first
+        cache_loaded = self._load_slide_cache()
+        if cache_loaded:
+            self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache (instant)")
+            return
+        
+        # If cache failed to load, rebuild from scratch
+        self.slides = []  # Clear any partial cache data
 
         # Get multislide frequency setting
         multislide_frequency = self.config.get("multislide_frequency", 0)

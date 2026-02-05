@@ -1545,13 +1545,10 @@ class GUI(tk.Tk):
         if not self.cached_slides:
             self._load_and_cache_slides()
         
-        # Extract image paths from cached slides (filter out video slides)
+        # Pass all slides (including MultiSlides) to the preview dialog
         if self.cached_slides:
-            from slideshow.slides.photo_slide import PhotoSlide
-            sorted_files = [slide.path for slide in self.cached_slides if isinstance(slide, PhotoSlide)]
-            if sorted_files:
-                ImageRotatorDialog(self, sorted_files)
-                return
+            ImageRotatorDialog(self, self.cached_slides)
+            return
         
         # Should not reach here, but fallback just in case
         wide_messagebox("error", "Error", "Failed to load image files.")
@@ -1582,7 +1579,7 @@ class GUI(tk.Tk):
             # Custom log callback that updates both the main log and the loading dialog
             def loading_log_callback(msg):
                 # Update loading dialog with progress
-                if "Sorting" in msg or "Sorted" in msg:
+                if "Sorting" in msg or "Sorted" in msg or "Loading from cache" in msg or "cache" in msg.lower():
                     clean_msg = msg.replace("[Slideshow] ", "").rstrip("\r")
                     loading_label.config(text=clean_msg)
                     loading_dialog.update()
@@ -1721,13 +1718,13 @@ class GUI(tk.Tk):
 class ImageRotatorDialog:
     """Dialog for previewing and rotating images"""
     
-    def __init__(self, parent, sorted_image_files):
+    def __init__(self, parent, slides):
         self.parent = parent
         self.config_data = parent.config_data
         self.input_folder = Path(parent.input_var.get().strip())
         
-        # Use pre-sorted list (already in slideshow order)
-        self.image_files = sorted_image_files
+        # Store slides (mix of PhotoSlide, VideoSlide, MultiSlide)
+        self.slides = slides
         
         # Create dialog window
         self.dialog = tk.Toplevel(parent)
@@ -1786,7 +1783,7 @@ class ImageRotatorDialog:
         self.slider = ttk.Scale(
             top_frame, 
             from_=1, 
-            to=len(self.image_files),
+            to=len(self.slides),
             orient=tk.HORIZONTAL,
             variable=self.slider_var,
             command=self._on_slider_change,
@@ -1816,16 +1813,26 @@ class ImageRotatorDialog:
         self.canvas.pack(fill=tk.BOTH, expand=True)
         
         # Rotation controls
-        rotation_frame = ttk.Frame(self.dialog)
-        rotation_frame.pack(fill=tk.X, padx=10, pady=10)
+        self.rotation_frame = ttk.Frame(self.dialog)
+        self.rotation_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        ttk.Label(rotation_frame, text="Rotate:").pack(side=tk.LEFT, padx=5)
-        ttk.Button(rotation_frame, text="↶ 90° Left", command=lambda: self._rotate(-90)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(rotation_frame, text="↷ 90° Right", command=lambda: self._rotate(90)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(rotation_frame, text="↻ 180°", command=lambda: self._rotate(180)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(rotation_frame, text="🗑 Delete", command=self._delete_image).pack(side=tk.LEFT, padx=(20, 5))
+        # MultiSlide image selector (shown only for MultiSlides)
+        self.multi_selector_frame = ttk.Frame(self.rotation_frame)
+        ttk.Label(self.multi_selector_frame, text="Select Image:").pack(side=tk.LEFT, padx=5)
+        self.multi_image_var = tk.IntVar(value=0)
+        ttk.Radiobutton(self.multi_selector_frame, text="1st", variable=self.multi_image_var, value=0).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(self.multi_selector_frame, text="2nd", variable=self.multi_image_var, value=1).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(self.multi_selector_frame, text="3rd", variable=self.multi_image_var, value=2).pack(side=tk.LEFT, padx=2)
+        ttk.Label(self.multi_selector_frame, text="│").pack(side=tk.LEFT, padx=10)
         
-        self.rotation_label = ttk.Label(rotation_frame, text="", font=("TkDefaultFont", 10))
+        # Standard rotation controls (work for both PhotoSlide and selected MultiSlide image)
+        ttk.Label(self.rotation_frame, text="Rotate:").pack(side=tk.LEFT, padx=5)
+        ttk.Button(self.rotation_frame, text="↶ 90° Left", command=lambda: self._rotate(-90)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(self.rotation_frame, text="↷ 90° Right", command=lambda: self._rotate(90)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(self.rotation_frame, text="↻ 180°", command=lambda: self._rotate(180)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(self.rotation_frame, text="🗑 Delete", command=self._delete_image).pack(side=tk.LEFT, padx=(20, 5))
+        
+        self.rotation_label = ttk.Label(self.rotation_frame, text="", font=("TkDefaultFont", 10))
         self.rotation_label.pack(side=tk.LEFT, padx=20)
         
         # Bottom frame with buttons
@@ -1845,22 +1852,49 @@ class ImageRotatorDialog:
         self.dialog.bind('<BackSpace>', lambda e: self._delete_image())  # Alternative for Delete
     
     def _load_image(self):
-        """Load and display the current image"""
-        if not self.image_files:
+        """Load and display the current slide (photo, video, or multi)"""
+        if not self.slides:
             return
         
-        image_path = self.image_files[self.current_index]
-        filename = image_path.name
+        slide = self.slides[self.current_index]
+        from slideshow.slides.photo_slide import PhotoSlide
+        from slideshow.slides.video_slide import VideoSlide
+        from slideshow.slides.multi_slide import MultiSlide
         
-        # Update counter and filename
-        self.counter_label.config(text=f"Image {self.current_index + 1} of {len(self.image_files)}")
-        self.filename_label.config(text=filename)
+        # Update counter
+        self.counter_label.config(text=f"Slide {self.current_index + 1} of {len(self.slides)}")
         
         # Update slider to match current index (without triggering callback)
         self.slider_var.set(self.current_index + 1)
         
         # Clear rotation label
         self.rotation_label.config(text="")
+        
+        # Show/hide MultiSlide selector based on slide type
+        if isinstance(slide, MultiSlide):
+            self.multi_selector_frame.pack(side=tk.LEFT)
+        else:
+            self.multi_selector_frame.pack_forget()
+        
+        # Handle different slide types
+        if isinstance(slide, VideoSlide):
+            # Show video placeholder
+            self._show_video_placeholder(slide)
+        elif isinstance(slide, MultiSlide):
+            # Show MultiSlide composite preview
+            self._show_multislide_preview(slide)
+        elif isinstance(slide, PhotoSlide):
+            # Show normal photo
+            self._show_photo(slide)
+        else:
+            self.parent.log_message(f"Unknown slide type: {type(slide)}")
+    
+    def _show_photo(self, slide):
+        """Display a PhotoSlide"""
+        image_path = slide.path
+        filename = image_path.name
+        
+        self.filename_label.config(text=filename)
         
         # Load image
         try:
@@ -1910,12 +1944,93 @@ class ImageRotatorDialog:
         except Exception as e:
             self.parent.log_message(f"Error loading image {filename}: {e}")
     
+    def _show_video_placeholder(self, slide):
+        """Show placeholder for VideoSlide"""
+        video_path = slide.path
+        filename = video_path.name
+        
+        self.filename_label.config(text=f"{filename} [VIDEO]")
+        self.date_label.config(text="Video file")
+        
+        # Show text placeholder
+        self.canvas.delete("all")
+        canvas_width = self.canvas.winfo_width() or 1000
+        canvas_height = self.canvas.winfo_height() or 600
+        
+        self.canvas.create_text(
+            canvas_width // 2, canvas_height // 2,
+            text=f"VIDEO\n{filename}",
+            font=("Arial", 24, "bold"),
+            fill="gray"
+        )
+    
+    def _show_multislide_preview(self, slide):
+        """Show preview of MultiSlide composite"""
+        # Show the first image file name with [MULTI] indicator
+        first_file = slide.media_files[0]
+        filenames = " + ".join([f.name for f in slide.media_files])
+        
+        self.filename_label.config(text=f"[MULTI] {filenames}")
+        self.date_label.config(text="Multi-slide composite (3 images)")
+        
+        # Generate composite preview
+        try:
+            composite = slide._create_composite()
+            if composite:
+                img = composite
+                
+                # Resize to fit canvas
+                canvas_width = self.canvas.winfo_width() or 1000
+                canvas_height = self.canvas.winfo_height() or 600
+                
+                img_ratio = img.width / img.height
+                canvas_ratio = canvas_width / canvas_height
+                
+                if img_ratio > canvas_ratio:
+                    new_width = canvas_width - 40
+                    new_height = int(new_width / img_ratio)
+                else:
+                    new_height = canvas_height - 40
+                    new_width = int(new_height * img_ratio)
+                
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                self.photo = ImageTk.PhotoImage(img)
+                self.canvas.delete("all")
+                self.canvas.create_image(canvas_width // 2, canvas_height // 2, image=self.photo)
+        except Exception as e:
+            self.parent.log_message(f"Error creating MultiSlide preview: {e}")
+            # Fallback to text
+            self.canvas.delete("all")
+            canvas_width = self.canvas.winfo_width() or 1000
+            canvas_height = self.canvas.winfo_height() or 600
+            self.canvas.create_text(
+                canvas_width // 2, canvas_height // 2,
+                text=f"MULTI-SLIDE\n{filenames}",
+                font=("Arial", 18),
+                fill="blue"
+            )
+    
     def _rotate(self, degrees):
         """Rotate and save the current image by the specified degrees"""
-        if not self.image_files:
+        if not self.slides:
             return
         
-        image_path = self.image_files[self.current_index]
+        slide = self.slides[self.current_index]
+        from slideshow.slides.photo_slide import PhotoSlide
+        from slideshow.slides.multi_slide import MultiSlide
+        
+        # Handle MultiSlide - rotate the selected component image
+        if isinstance(slide, MultiSlide):
+            self._rotate_multi_image(self.multi_image_var.get(), degrees)
+            return
+        
+        # Only allow rotation on PhotoSlides
+        if not isinstance(slide, PhotoSlide):
+            wide_messagebox("info", "Info", "Rotation is only available for photo slides")
+            return
+        
+        image_path = slide.path
         filename = image_path.name
         
         try:
@@ -1945,6 +2060,57 @@ class ImageRotatorDialog:
             
             # Reload to show the saved version
             self._load_image()
+            
+        except Exception as e:
+            self.parent.log_message(f"Error rotating image {filename}: {e}")
+            wide_messagebox("error", "Error", f"Failed to rotate image: {e}")
+    
+    def _rotate_multi_image(self, image_index, degrees):
+        """Rotate one of the component images in a MultiSlide"""
+        if not self.slides:
+            return
+        
+        slide = self.slides[self.current_index]
+        from slideshow.slides.multi_slide import MultiSlide
+        
+        if not isinstance(slide, MultiSlide):
+            return
+        
+        if image_index >= len(slide.media_files):
+            return
+        
+        image_path = slide.media_files[image_index]
+        filename = image_path.name
+        
+        try:
+            # Load the image from disk
+            img = Image.open(image_path)
+            
+            # Preserve EXIF data
+            exif_data = img.info.get('exif', b'')
+            
+            # Apply EXIF orientation first
+            img = ImageOps.exif_transpose(img)
+            
+            # Rotate the image
+            img_rotated = img.rotate(degrees, expand=True)
+            
+            # Save back to the same file
+            if exif_data:
+                img_rotated.save(image_path, exif=exif_data)
+            else:
+                img_rotated.save(image_path)
+            
+            # Log the rotation
+            self.parent.log_message(f"Rotated MultiSlide image #{image_index + 1} ({filename}) by {degrees}°")
+            
+            # Clear composite cache and reload
+            slide.composite_image = None
+            self._load_image()
+            
+        except Exception as e:
+            self.parent.log_message(f"Error rotating MultiSlide image {filename}: {e}")
+            wide_messagebox("error", "Error", f"Failed to rotate image: {e}")
             
         except Exception as e:
             self.parent.log_message(f"Error rotating image {filename}: {e}")
@@ -1987,20 +2153,20 @@ class ImageRotatorDialog:
             self._load_image()
     
     def _next_image(self):
-        """Go to next image"""
-        if self.current_index < len(self.image_files) - 1:
+        """Go to next slide"""
+        if self.current_index < len(self.slides) - 1:
             self.current_index += 1
             self._load_image()
     
     def _jump_to_image(self):
-        """Jump to a specific image number"""
+        """Jump to a specific slide number"""
         try:
             target = int(self.jump_var.get()) - 1  # Convert to 0-based index
-            if 0 <= target < len(self.image_files):
+            if 0 <= target < len(self.slides):
                 self.current_index = target
                 self._load_image()
             else:
-                wide_messagebox("error", "Error", f"Please enter a number between 1 and {len(self.image_files)}")
+                wide_messagebox("error", "Error", f"Please enter a number between 1 and {len(self.slides)}")
         except ValueError:
             wide_messagebox("error", "Error", "Please enter a valid number")
     
@@ -2008,16 +2174,24 @@ class ImageRotatorDialog:
         """Handle slider value change for rapid scrolling"""
         # Convert slider value (1-based) to array index (0-based)
         target = int(float(value)) - 1
-        if 0 <= target < len(self.image_files) and target != self.current_index:
+        if 0 <= target < len(self.slides) and target != self.current_index:
             self.current_index = target
             self._load_image()
     
     def _delete_image(self):
-        """Delete the current image after confirmation"""
-        if not self.image_files:
+        """Delete the current slide after confirmation"""
+        if not self.slides:
             return
         
-        image_path = self.image_files[self.current_index]
+        slide = self.slides[self.current_index]
+        from slideshow.slides.photo_slide import PhotoSlide
+        
+        # Only allow deletion of PhotoSlides (not videos or multislides)
+        if not isinstance(slide, PhotoSlide):
+            wide_messagebox("info", "Info", "Only individual photo slides can be deleted")
+            return
+        
+        image_path = slide.path
         filename = image_path.name
         
         # Confirm deletion
@@ -2034,25 +2208,25 @@ class ImageRotatorDialog:
                 self.parent.log_message(f"Deleted image: {filename}")
                 
                 # Remove from our list
-                del self.image_files[self.current_index]
+                del self.slides[self.current_index]
                 
                 # Clear thumbnail cache
                 self.thumbnail_cache.pop(filename, None)
                 
                 # Update slider range
-                self.slider.config(to=len(self.image_files))
+                self.slider.config(to=len(self.slides))
                 
-                # Check if we have any images left
-                if not self.image_files:
-                    wide_messagebox("info", "No Images", "No more images in folder.")
+                # Check if we have any slides left
+                if not self.slides:
+                    wide_messagebox("info", "No Images", "No more slides in folder.")
                     self.dialog.destroy()
                     return
                 
                 # Adjust index if needed
-                if self.current_index >= len(self.image_files):
-                    self.current_index = len(self.image_files) - 1
+                if self.current_index >= len(self.slides):
+                    self.current_index = len(self.slides) - 1
                 
-                # Load the next/previous image
+                # Load the next/previous slide
                 self._load_image()
                 
             except Exception as e:
