@@ -131,6 +131,46 @@ class PhotoSlide(SlideItem):
 
         return clip_path
     
+    def rotate(self, degrees: int) -> bool:
+        """
+        Rotate this photo slide by the specified degrees and save.
+        Overrides base class to provide photo rotation functionality.
+        
+        Args:
+            degrees: Rotation angle (positive = counter-clockwise)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Load the current image from disk
+            img = Image.open(self.path)
+            
+            # Preserve EXIF data before any operations
+            exif_data = img.info.get('exif', b'')
+            
+            # Apply EXIF orientation first to get the correct base orientation
+            img = ImageOps.exif_transpose(img)
+            
+            # Rotate the image (PIL rotates counter-clockwise with positive angles)
+            img_rotated = img.rotate(degrees, expand=True)
+            
+            # Save back to the same file, preserving EXIF data
+            if exif_data:
+                img_rotated.save(self.path, exif=exif_data)
+            else:
+                img_rotated.save(self.path)
+            
+            # Invalidate cached images since the source file changed
+            self._to_image = None
+            self._from_image = None
+            self._is_portrait = None
+            
+            return True
+            
+        except Exception as e:
+            return False
+    
     def _check_orientation(self) -> bool:
         """Check if the photo is in portrait orientation by examining the image file."""
         try:

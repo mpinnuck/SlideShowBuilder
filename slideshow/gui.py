@@ -1554,7 +1554,7 @@ class GUI(tk.Tk):
         wide_messagebox("error", "Error", "Failed to load image files.")
     
     def _load_and_cache_slides(self):
-        """Load slides using slideshow logic and cache them for reuse"""
+        """Load slides using slideshow model and cache them for reuse"""
         # Show a loading dialog
         loading_dialog = tk.Toplevel(self)
         loading_dialog.title("Loading Images")
@@ -1569,31 +1569,15 @@ class GUI(tk.Tk):
         y = (loading_dialog.winfo_screenheight() // 2) - (height // 2)
         loading_dialog.geometry(f"{width}x{height}+{x}+{y}")
         
-        loading_label = ttk.Label(loading_dialog, text="Loading slides...", font=("Arial", 12))
+        loading_label = ttk.Label(loading_dialog, text="Loading slides, please wait...", font=("Arial", 12))
         loading_label.pack(expand=True)
         loading_dialog.update()
         
         try:
             from slideshow.slideshowmodel import Slideshow
             
-            # Custom log callback that updates both the main log and the loading dialog
-            def loading_log_callback(msg):
-                # Update loading dialog with progress
-                if "Sorting" in msg or "Sorted" in msg or "Loading from cache" in msg or "cache" in msg.lower():
-                    clean_msg = msg.replace("[Slideshow] ", "").rstrip("\r")
-                    loading_label.config(text=clean_msg)
-                    loading_dialog.update()
-                
-                # Also log to main window (but process it immediately)
-                self.log_message(msg)
-                # Process pending events to keep GUI responsive
-                self.update_idletasks()
-            
-            # Create a temporary slideshow just to load the slides
-            slideshow = Slideshow(self.config_data, log_callback=loading_log_callback, progress_callback=None)
-            
-            # Manually load slides with progress updates
-            slideshow.load_slides()
+            # Create slideshow and load slides (model handles all the logic)
+            slideshow = Slideshow(self.config_data, log_callback=self.log_message, progress_callback=None)
             
             # Cache the loaded slides for preview and future exports
             self.cached_slides = slideshow.slides
@@ -1640,6 +1624,9 @@ class GUI(tk.Tk):
         loading_label.pack(expand=True)
         loading_dialog.update()
         
+        # Log to main panel
+        self.log_message("Finding image files...")
+        
         try:
             if recurse_folders:
                 image_files = [f for f in input_folder.rglob("*") if f.is_file() and f.suffix.lower() in supported_image_extensions]
@@ -1649,16 +1636,21 @@ class GUI(tk.Tk):
             if not image_files:
                 loading_dialog.destroy()
                 recurse_msg = " (including subdirectories)" if recurse_folders else ""
-                wide_messagebox("error", "Error", f"No image files found in the input folder{recurse_msg}.")
+                msg = f"No image files found in the input folder{recurse_msg}."
+                self.log_message(msg)
+                wide_messagebox("error", "Error", msg)
                 return None
             
-            loading_label.config(text=f"Found {len(image_files)} images. Sorting...")
+            msg = f"Found {len(image_files)} images. Sorting..."
+            loading_label.config(text=msg)
             loading_dialog.update()
+            self.log_message(msg)
             
             # Sort using the same logic as slideshow export
             if sort_by_filename:
                 # Sort alphabetically by filename
                 image_files = sorted(image_files, key=lambda p: p.name.lower())
+                self.log_message(f"Sorted {len(image_files)} images alphabetically by filename")
             else:
                 # Sort by date taken (same as slideshow model)
                 import datetime
@@ -1698,20 +1690,29 @@ class GUI(tk.Tk):
                 for i, img_file in enumerate(image_files, 1):
                     get_file_timestamp(img_file)
                     if i % 10 == 0 or i == total:
-                        loading_label.config(text=f"Processing {i} of {total} images...")
+                        msg = f"Processing {i} of {total} images..."
+                        loading_label.config(text=msg)
                         loading_dialog.update()
+                        if i % 50 == 0 or i == total:  # Log every 50 images to avoid spam
+                            self.log_message(msg)
                 
-                loading_label.config(text=f"Sorting {total} images...")
+                msg = f"Sorting {total} images by date..."
+                loading_label.config(text=msg)
                 loading_dialog.update()
+                self.log_message(msg)
                 
                 image_files = sorted(image_files, key=get_file_timestamp)
+                self.log_message(f"Sorted {len(image_files)} images by date taken")
             
             loading_dialog.destroy()
+            self.log_message(f"Successfully loaded {len(image_files)} images for preview")
             return image_files
             
         except Exception as e:
             loading_dialog.destroy()
-            wide_messagebox("error", "Error", f"Failed to load images: {e}")
+            error_msg = f"Failed to load images: {e}"
+            self.log_message(error_msg)
+            wide_messagebox("error", "Error", error_msg)
             return None
 
 
@@ -2020,101 +2021,25 @@ class ImageRotatorDialog:
         from slideshow.slides.photo_slide import PhotoSlide
         from slideshow.slides.multi_slide import MultiSlide
         
-        # Handle MultiSlide - rotate the selected component image
+        # Handle MultiSlide - select component then rotate
         if isinstance(slide, MultiSlide):
-            self._rotate_multi_image(self.multi_image_var.get(), degrees)
-            return
-        
-        # Only allow rotation on PhotoSlides
-        if not isinstance(slide, PhotoSlide):
-            wide_messagebox("info", "Info", "Rotation is only available for photo slides")
-            return
-        
-        image_path = slide.path
-        filename = image_path.name
-        
-        try:
-            # Load the current image from disk
-            img = Image.open(image_path)
-            
-            # Preserve EXIF data before any operations
-            exif_data = img.info.get('exif', b'')
-            
-            # Apply EXIF orientation first to get the correct base orientation
-            img = ImageOps.exif_transpose(img)
-            
-            # Rotate the image (PIL rotates counter-clockwise with positive angles)
-            img_rotated = img.rotate(degrees, expand=True)
-            
-            # Save back to the same file, preserving EXIF data
-            if exif_data:
-                img_rotated.save(image_path, exif=exif_data)
+            component_index = self.multi_image_var.get()
+            slide.select_component(component_index)
+            if slide.rotate(degrees):
+                filename = slide.media_files[component_index].name
+                self.parent.log_message(f"Rotated MultiSlide image #{component_index + 1} ({filename}) by {degrees}°")
+                self._load_image()
             else:
-                img_rotated.save(image_path)
-            
-            # Log the rotation
-            self.parent.log_message(f"Rotated and saved {filename} by {degrees}° (EXIF preserved)")
-            
-            # Clear the thumbnail cache for this image
-            self.thumbnail_cache.pop(filename, None)
-            
-            # Reload to show the saved version
+                wide_messagebox("error", "Error", "Failed to rotate MultiSlide component image")
+            return
+        
+        # Handle PhotoSlide and other slide types
+        if slide.rotate(degrees):
+            self.parent.log_message(f"Rotated and saved {slide.path.name} by {degrees}° (EXIF preserved)")
+            self.thumbnail_cache.pop(slide.path.name, None)
             self._load_image()
-            
-        except Exception as e:
-            self.parent.log_message(f"Error rotating image {filename}: {e}")
-            wide_messagebox("error", "Error", f"Failed to rotate image: {e}")
-    
-    def _rotate_multi_image(self, image_index, degrees):
-        """Rotate one of the component images in a MultiSlide"""
-        if not self.slides:
-            return
-        
-        slide = self.slides[self.current_index]
-        from slideshow.slides.multi_slide import MultiSlide
-        
-        if not isinstance(slide, MultiSlide):
-            return
-        
-        if image_index >= len(slide.media_files):
-            return
-        
-        image_path = slide.media_files[image_index]
-        filename = image_path.name
-        
-        try:
-            # Load the image from disk
-            img = Image.open(image_path)
-            
-            # Preserve EXIF data
-            exif_data = img.info.get('exif', b'')
-            
-            # Apply EXIF orientation first
-            img = ImageOps.exif_transpose(img)
-            
-            # Rotate the image
-            img_rotated = img.rotate(degrees, expand=True)
-            
-            # Save back to the same file
-            if exif_data:
-                img_rotated.save(image_path, exif=exif_data)
-            else:
-                img_rotated.save(image_path)
-            
-            # Log the rotation
-            self.parent.log_message(f"Rotated MultiSlide image #{image_index + 1} ({filename}) by {degrees}°")
-            
-            # Clear composite cache and reload
-            slide.composite_image = None
-            self._load_image()
-            
-        except Exception as e:
-            self.parent.log_message(f"Error rotating MultiSlide image {filename}: {e}")
-            wide_messagebox("error", "Error", f"Failed to rotate image: {e}")
-            
-        except Exception as e:
-            self.parent.log_message(f"Error rotating image {filename}: {e}")
-            wide_messagebox("error", "Error", f"Failed to rotate image: {e}")
+        else:
+            wide_messagebox("info", "Info", "Rotation is not supported for this slide type")
     
     def _extract_creation_date_from_image(self, img: Image.Image, image_path: Path) -> str:
         """Extract creation date from an already-opened image (optimized to avoid re-opening)"""

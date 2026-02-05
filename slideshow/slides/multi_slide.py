@@ -37,10 +37,90 @@ class MultiSlide(SlideItem):
         self.fps = fps
         self.composite_image = None
         self.slide_count = len(media_files)  # Should be 3
+        self.selected_component = 0  # Default to main image (component 0)
         
     def get_slide_count(self):
         """Return the number of slides consumed by this MultiSlide."""
         return self.slide_count
+    
+    def select_component(self, component_index: int) -> bool:
+        """
+        Select which component image to operate on (for rotation, etc.).
+        
+        Args:
+            component_index: Index of the component to select (0-2)
+            
+        Returns:
+            True if valid index, False otherwise
+        """
+        if 0 <= component_index < len(self.media_files):
+            self.selected_component = component_index
+            return True
+        return False
+    
+    def get_selected_component(self) -> int:
+        """Get the currently selected component index."""
+        return self.selected_component
+    
+    def rotate(self, degrees: int) -> bool:
+        """
+        Rotate the currently selected component image of this MultiSlide.
+        Overrides base class to provide rotation for the selected image.
+        Use select_component() to choose which image to rotate.
+        
+        Args:
+            degrees: Rotation angle (positive = counter-clockwise)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.rotate_component(self.selected_component, degrees)
+    
+    def rotate_component(self, component_index: int, degrees: int) -> bool:
+        """
+        Rotate one of the component images in this MultiSlide.
+        
+        Args:
+            component_index: Index of the image to rotate (0-2)
+            degrees: Rotation angle (positive = counter-clockwise)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if component_index < 0 or component_index >= len(self.media_files):
+            return False
+        
+        image_path = self.media_files[component_index]
+        
+        try:
+            # Load the image from disk
+            img = Image.open(image_path)
+            
+            # Preserve EXIF data
+            exif_data = img.info.get('exif', b'')
+            
+            # Apply EXIF orientation first
+            img = ImageOps.exif_transpose(img)
+            
+            # Rotate the image
+            img_rotated = img.rotate(degrees, expand=True)
+            
+            # Save back to the same file
+            if exif_data:
+                img_rotated.save(image_path, exif=exif_data)
+            else:
+                img_rotated.save(image_path)
+            
+            # Invalidate composite cache since source changed
+            self.composite_image = None
+            self._to_image = None
+            self._from_image = None
+            self._is_portrait = None
+            
+            return True
+            
+        except Exception as e:
+            return False
     
     def _check_orientation(self) -> bool:
         """

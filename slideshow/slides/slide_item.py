@@ -86,6 +86,20 @@ class SlideItem(ABC):
             self._is_portrait = self._check_orientation()
         return self._is_portrait
     
+    def rotate(self, degrees: int) -> bool:
+        """
+        Rotate this slide by the specified degrees and save.
+        Default implementation returns False (not supported).
+        Child classes should override to provide rotation functionality.
+        
+        Args:
+            degrees: Rotation angle (positive = counter-clockwise)
+            
+        Returns:
+            True if successful, False if not supported or failed
+        """
+        return False
+    
     @abstractmethod
     def _check_orientation(self) -> bool:
         """
