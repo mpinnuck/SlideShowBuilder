@@ -171,6 +171,16 @@ class PhotoSlide(SlideItem):
         except Exception as e:
             return False
     
+    def _load_preview_image(self) -> Image.Image:
+        """Load the source photo image."""
+        img = Image.open(self.path)
+        # Apply EXIF orientation to get correct display
+        img = ImageOps.exif_transpose(img)
+        # Convert to RGB if needed
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        return img
+    
     def _check_orientation(self) -> bool:
         """Check if the photo is in portrait orientation by examining the image file."""
         try:

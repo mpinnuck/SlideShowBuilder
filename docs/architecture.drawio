@@ -1,0 +1,302 @@
+<mxfile host="65bd71144e">
+    <diagram id="SlideShowBuilder-ClassDiagram" name="Class Diagram">
+        <mxGraphModel dx="1434" dy="788" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                
+                <!-- Config Singleton -->
+                <mxCell id="config" value="&lt;&lt;Singleton&gt;&gt;&#10;Config&#10;─────────────────&#10;+ APP_SETTINGS_DIR: Path&#10;+ APP_SETTINGS_FILE: Path&#10;+ PROJECT_CONFIG_FILE: str&#10;- _instance: Config&#10;- _data: dict&#10;─────────────────&#10;+ instance(): Config&#10;+ load(output_folder): dict&#10;+ save(output_folder): void&#10;+ get(key, default): Any&#10;+ update(values): void&#10;+ get_ffmpeg_encoding_params(): dict&#10;+ add_to_project_history(): void&#10;+ get_project_history(): list" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=260;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="40" width="280" height="260" as="geometry"/>
+                </mxCell>
+                
+                <!-- GUI -->
+                <mxCell id="gui" value="GUI&#10;─────────────────&#10;- root: Tk&#10;- model: Slideshow&#10;- config: dict&#10;- project_name: str&#10;- input_folder: str&#10;- output_folder: str&#10;─────────────────&#10;+ __init__(version)&#10;+ mainloop()&#10;+ load_project()&#10;+ save_project()&#10;+ build_slideshow()&#10;+ show_settings()&#10;- create_widgets()&#10;- log(message)" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=240;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+                    <mxGeometry x="400" y="40" width="260" height="240" as="geometry"/>
+                </mxCell>
+                
+                <!-- Slideshow -->
+                <mxCell id="slideshow" value="Slideshow&#10;─────────────────&#10;- config: dict&#10;- slides: List[SlideItem]&#10;- transitions: List&#10;- working_dir: Path&#10;- transition: BaseTransition&#10;─────────────────&#10;+ __init__(config)&#10;+ load_slides(): void&#10;+ render(): Path&#10;+ build(): Path&#10;- render_slides(): void&#10;- render_transitions(): void&#10;- concatenate_clips(): void&#10;- add_soundtrack(): void" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=260;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="760" y="40" width="280" height="260" as="geometry"/>
+                </mxCell>
+                
+                <!-- SlideItem (Abstract) -->
+                <mxCell id="slideitem" value="&lt;&lt;Abstract&gt;&gt;&#10;SlideItem&#10;─────────────────&#10;# path: Path&#10;# duration: float&#10;# resolution: tuple&#10;# creation_date: float&#10;# _rendered_clip: Path&#10;# _to_image: Image&#10;# _from_image: Image&#10;─────────────────&#10;+ render(working_dir): Path&#10;+ get_to_image(): Image&#10;+ get_from_image(): Image&#10;+ get_metadata(): VideoSegment&#10;+ is_portrait(): bool&#10;+ rotate(degrees): bool&#10;# _check_orientation(): bool" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=300;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+                    <mxGeometry x="400" y="380" width="260" height="300" as="geometry"/>
+                </mxCell>
+                
+                <!-- PhotoSlide -->
+                <mxCell id="photoslide" value="PhotoSlide&#10;─────────────────&#10;- fps: int&#10;─────────────────&#10;+ render(working_dir): Path&#10;- _check_orientation(): bool" style="swimlane;fontStyle=0;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=100;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="160" y="760" width="240" height="100" as="geometry"/>
+                </mxCell>
+                
+                <!-- VideoSlide -->
+                <mxCell id="videoslide" value="VideoSlide&#10;─────────────────&#10;- fps: int&#10;─────────────────&#10;+ render(working_dir): Path&#10;- _check_orientation(): bool" style="swimlane;fontStyle=0;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=100;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="440" y="760" width="240" height="100" as="geometry"/>
+                </mxCell>
+                
+                <!-- MultiSlide -->
+                <mxCell id="multislide" value="MultiSlide&#10;─────────────────&#10;- media_files: List[Path]&#10;- fps: int&#10;- slide_count: int&#10;- selected_component: int&#10;─────────────────&#10;+ render(working_dir): Path&#10;+ get_slide_count(): int&#10;+ select_component(index): bool&#10;+ rotate_component(index, degrees): bool&#10;- create_composite(): Image" style="swimlane;fontStyle=0;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=200;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="720" y="760" width="280" height="200" as="geometry"/>
+                </mxCell>
+                
+                <!-- BaseTransition (Abstract) -->
+                <mxCell id="basetransition" value="&lt;&lt;Abstract&gt;&gt;&#10;BaseTransition&#10;─────────────────&#10;# duration: float&#10;# name: str&#10;# description: str&#10;─────────────────&#10;+ render(index, slides, output): int&#10;+ get_requirements(): list&#10;+ get_slides_consumed(): int&#10;+ is_available(): bool" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=200;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+                    <mxGeometry x="1120" y="380" width="260" height="200" as="geometry"/>
+                </mxCell>
+                
+                <!-- TransitionFactory -->
+                <mxCell id="transitionfactory" value="&lt;&lt;Factory&gt;&gt;&#10;TransitionFactory&#10;─────────────────&#10;─────────────────&#10;+ create(name, duration, resolution, fps): BaseTransition&#10;+ get_available_transitions(): list" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=120;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+                    <mxGeometry x="1120" y="640" width="320" height="120" as="geometry"/>
+                </mxCell>
+                
+                <!-- FFmpegCache (Singleton) -->
+                <mxCell id="ffmpegcache" value="&lt;&lt;Singleton&gt;&gt;&#10;FFmpegCache&#10;─────────────────&#10;- _cache_dir: Path&#10;- _cache_index: dict&#10;- _enabled: bool&#10;─────────────────&#10;+ configure(cache_dir): void&#10;+ get_cached_clip(path, params): Path&#10;+ store_clip(path, params, clip): void&#10;+ clear_cache(): void&#10;+ get_cache_stats(): dict&#10;+ enable(enabled): void" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=240;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+                    <mxGeometry x="1120" y="40" width="280" height="240" as="geometry"/>
+                </mxCell>
+                
+                <!-- VideoEditor -->
+                <mxCell id="videoeditor" value="VideoEditor&#10;─────────────────&#10;- metadata: SlideshowMetadata&#10;─────────────────&#10;+ insert_slide(index, slide): void&#10;+ remove_slide(index): void&#10;+ replace_slide(index, slide): void&#10;+ rebuild_from_metadata(): Path&#10;+ extract_segment(index): Path" style="swimlane;fontStyle=0;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=180;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="760" y="380" width="280" height="180" as="geometry"/>
+                </mxCell>
+                
+                <!-- VideoSegment (Dataclass) -->
+                <mxCell id="videosegment" value="&lt;&lt;Dataclass&gt;&gt;&#10;VideoSegment&#10;─────────────────&#10;+ index: int&#10;+ type: str&#10;+ source_path: str&#10;+ rendered_path: str&#10;+ duration: float&#10;+ start_time: float&#10;+ end_time: float&#10;+ byte_offset: int&#10;+ byte_size: int&#10;─────────────────&#10;+ to_dict(): dict&#10;+ from_dict(data): VideoSegment" style="swimlane;fontStyle=0;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=260;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="380" width="280" height="260" as="geometry"/>
+                </mxCell>
+                
+                <!-- SlideshowMetadata -->
+                <mxCell id="metadata" value="SlideshowMetadata&#10;─────────────────&#10;- video_path: Path&#10;- segments: List[VideoSegment]&#10;- total_duration: float&#10;- soundtrack_path: str&#10;─────────────────&#10;+ add_segment(segment): void&#10;+ save(): void&#10;+ load(video_path): SlideshowMetadata&#10;+ find_segment_at_time(timestamp): VideoSegment" style="swimlane;fontStyle=0;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=220;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="700" width="320" height="220" as="geometry"/>
+                </mxCell>
+                
+                <!-- Relationships -->
+                
+                <!-- GUI uses Config -->
+                <mxCell id="gui-config" edge="1" parent="1" source="gui" target="config">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="gui-config-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="gui-config">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- GUI creates Slideshow -->
+                <mxCell id="gui-slideshow" edge="1" parent="1" source="gui" target="slideshow">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="gui-slideshow-label" value="creates" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="gui-slideshow">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Slideshow uses Config -->
+                <mxCell id="slideshow-config" edge="1" parent="1" source="slideshow" target="config">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="900" y="320"/>
+                            <mxPoint x="180" y="320"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="slideshow-config-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="slideshow-config">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Slideshow contains SlideItems -->
+                <mxCell id="slideshow-slideitem" edge="1" parent="1" source="slideshow" target="slideitem">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="900" y="330"/>
+                            <mxPoint x="530" y="330"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="slideshow-slideitem-label" value="contains *" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="slideshow-slideitem">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Slideshow uses BaseTransition -->
+                <mxCell id="slideshow-transition" edge="1" parent="1" source="slideshow" target="basetransition">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="900" y="330"/>
+                            <mxPoint x="1250" y="330"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="slideshow-transition-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="slideshow-transition">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Slideshow uses FFmpegCache -->
+                <mxCell id="slideshow-cache" edge="1" parent="1" source="slideshow" target="ffmpegcache">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1040" y="160"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="slideshow-cache-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="slideshow-cache">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- SlideItem inheritance -->
+                <mxCell id="photoslide-slideitem" edge="1" parent="1" source="photoslide" target="slideitem" style="endArrow=block;endFill=0;">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="videoslide-slideitem" edge="1" parent="1" source="videoslide" target="slideitem" style="endArrow=block;endFill=0;">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="multislide-slideitem" edge="1" parent="1" source="multislide" target="slideitem" style="endArrow=block;endFill=0;">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="860" y="740"/>
+                            <mxPoint x="530" y="740"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- SlideItem produces VideoSegment -->
+                <mxCell id="slideitem-segment" edge="1" parent="1" source="slideitem" target="videosegment" style="dashed=1;">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="360" y="530"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="slideitem-segment-label" value="&amp;lt;&amp;lt;creates&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="slideitem-segment">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- VideoEditor uses VideoSegment -->
+                <mxCell id="editor-segment" edge="1" parent="1" source="videoeditor" target="videosegment">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="760" y="470"/>
+                            <mxPoint x="360" y="470"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="editor-segment-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="editor-segment">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- VideoEditor uses SlideshowMetadata -->
+                <mxCell id="editor-metadata" edge="1" parent="1" source="videoeditor" target="metadata">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="760" y="810"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="editor-metadata-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="editor-metadata">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- SlideshowMetadata contains VideoSegments -->
+                <mxCell id="metadata-segment" edge="1" parent="1" source="metadata" target="videosegment">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="200" y="680"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="metadata-segment-label" value="contains *" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="metadata-segment">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- TransitionFactory creates BaseTransition -->
+                <mxCell id="factory-transition" edge="1" parent="1" source="transitionfactory" target="basetransition" style="dashed=1;">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="factory-transition-label" value="&amp;lt;&amp;lt;creates&amp;gt;&amp;gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="factory-transition">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- PhotoSlide uses FFmpegCache -->
+                <mxCell id="photo-cache" edge="1" parent="1" source="photoslide" target="ffmpegcache" style="dashed=1;">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="280" y="920"/>
+                            <mxPoint x="1260" y="920"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="photo-cache-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="photo-cache">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- VideoSlide uses FFmpegCache -->
+                <mxCell id="video-cache" edge="1" parent="1" source="videoslide" target="ffmpegcache" style="dashed=1;">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="560" y="900"/>
+                            <mxPoint x="1260" y="900"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="video-cache-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="video-cache">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- MultiSlide uses FFmpegCache -->
+                <mxCell id="multi-cache" edge="1" parent="1" source="multislide" target="ffmpegcache" style="dashed=1;">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1260" y="880"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="multi-cache-label" value="uses" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="multi-cache">
+                    <mxGeometry x="-0.2" y="1" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Legend -->
+                <mxCell id="legend-box" value="Legend" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;" vertex="1" parent="1">
+                    <mxGeometry x="1120" y="800" width="280" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-inheritance" value="Inheritance (is-a)" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;endArrow=block;endFill=0;edgeStyle=orthogonalEdgeStyle;" vertex="1" parent="legend-box">
+                    <mxGeometry y="30" width="280" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-association" value="Association (uses/has)" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;edgeStyle=orthogonalEdgeStyle;" vertex="1" parent="legend-box">
+                    <mxGeometry y="56" width="280" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-dependency" value="Dependency (creates/calls)" style="text;strokeColor=#000000;fillColor=#ffffff;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;dashed=1;edgeStyle=orthogonalEdgeStyle;" vertex="1" parent="legend-box">
+                    <mxGeometry y="82" width="280" height="26" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-colors" value="Colors: Blue=Singletons, Green=UI,&#10;Yellow=Models, Purple=Slides,&#10;Orange=Transitions, Gray=Data" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="legend-box">
+                    <mxGeometry y="108" width="280" height="52" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

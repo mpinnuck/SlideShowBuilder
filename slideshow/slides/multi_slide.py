@@ -122,6 +122,26 @@ class MultiSlide(SlideItem):
         except Exception as e:
             return False
     
+    def _load_preview_image(self) -> Image.Image:
+        """Load preview image - returns the composite if already created, otherwise the main image."""
+        if self.composite_image is not None:
+            return self.composite_image
+        
+        # Return main image (first file)
+        if len(self.media_files) > 0:
+            main_file = self.media_files[0]
+            if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
+                img = Image.open(main_file)
+                img = ImageOps.exif_transpose(img)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                return img
+            elif main_file.suffix.lower() in ['.mp4', '.mov']:
+                from slideshow.transitions.utils import extract_frame
+                return extract_frame(main_file, last=False)
+        
+        raise RuntimeError(f"Cannot load preview image from MultiSlide with {len(self.media_files)} files")
+    
     def _check_orientation(self) -> bool:
         """
         MultiSlide orientation is determined by the main image (first slide).

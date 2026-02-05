@@ -172,9 +172,15 @@ class Slideshow:
             fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
             resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
             skipped = 0
+            total_items = len(slide_data)
             
-            for item in slide_data:
+            for idx, item in enumerate(slide_data):
                 path = Path(item["path"])
+                
+                # Report progress every 10% of items
+                if self.progress_callback and total_items > 0:
+                    if idx % max(1, total_items // 10) == 0 or idx == total_items - 1:
+                        self.progress_callback(idx + 1, total_items, f"Loading {idx + 1}/{total_items} slides from cache...")
                 
                 # Check if files exist
                 skip_this_slide = False
@@ -273,7 +279,11 @@ class Slideshow:
         # Try to load from cache first
         cache_loaded = self._load_slide_cache()
         if cache_loaded:
-            self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache (instant)")
+            self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache")
+            # Final progress update
+            if self.progress_callback:
+                total = len(self.slides)
+                self.progress_callback(total, total, f"Loaded {total} slides from cache")
             return
         
         # If cache failed to load, rebuild from scratch
@@ -410,10 +420,18 @@ class Slideshow:
         total_files = len(media_files)
         self._log(f"[Slideshow] Loading {total_files} files...")
         
+        # Report initial progress
+        if self.progress_callback:
+            self.progress_callback(0, total_files, f"Loading {total_files} files...")
+        
         for i, path in enumerate(media_files):
             # Skip files that were consumed by previous MultiSlides
             if i < skip_until:
                 continue
+            
+            # Update progress callback (every file)
+            if self.progress_callback:
+                self.progress_callback(i + 1, total_files, f"Loading {i + 1}/{total_files} files...")
                 
             ext = path.suffix.lower()
             

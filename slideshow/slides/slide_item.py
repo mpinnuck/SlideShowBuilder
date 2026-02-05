@@ -13,6 +13,7 @@ class SlideItem(ABC):
         self.creation_date = creation_date  # Timestamp, read once from EXIF/file stats
         self._to_image: Optional[Image.Image] = None
         self._from_image: Optional[Image.Image] = None
+        self._preview_image: Optional[Image.Image] = None
         self._rendered_clip: Optional[Path] = None
         self._is_portrait: Optional[bool] = None  # Cache for orientation check
 
@@ -49,6 +50,17 @@ class SlideItem(ABC):
         if self._from_image is None:
             self._from_image = self._load_image(From=True)
         return self._from_image
+    
+    def get_preview_image(self) -> Image.Image:
+        """Return a preview image from the source media, caching it to avoid repeated loading."""
+        if self._preview_image is None:
+            self._preview_image = self._load_preview_image()
+        return self._preview_image
+    
+    @abstractmethod
+    def _load_preview_image(self) -> Image.Image:
+        """Load a preview image from the source media. Must be implemented by child classes."""
+        pass
     
     def get_metadata(self, index: int, start_time: float):
         """Generate metadata for this slide."""

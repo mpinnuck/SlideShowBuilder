@@ -1,3 +1,4 @@
+import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font
 import threading
@@ -1542,23 +1543,19 @@ class GUI(tk.Tk):
             return
         
         # Load and cache slides if not already loaded
+        # The _load_and_cache_slides method now handles opening the dialog when done
         if not self.cached_slides:
             self._load_and_cache_slides()
-        
-        # Pass all slides (including MultiSlides) to the preview dialog
-        if self.cached_slides:
+        else:
+            # Slides already cached, open dialog immediately
             ImageRotatorDialog(self, self.cached_slides)
-            return
-        
-        # Should not reach here, but fallback just in case
-        wide_messagebox("error", "Error", "Failed to load image files.")
     
     def _load_and_cache_slides(self):
         """Load slides using slideshow model and cache them for reuse"""
-        # Show a loading dialog
+        # Show a loading dialog with progress bar
         loading_dialog = tk.Toplevel(self)
-        loading_dialog.title("Loading Images")
-        loading_dialog.geometry("400x100")
+        loading_dialog.title("Loading Slides")
+        loading_dialog.geometry("500x120")
         loading_dialog.transient(self)
         
         # Center the dialog on screen
@@ -1570,24 +1567,91 @@ class GUI(tk.Tk):
         loading_dialog.geometry(f"{width}x{height}+{x}+{y}")
         
         loading_label = ttk.Label(loading_dialog, text="Loading slides, please wait...", font=("Arial", 12))
-        loading_label.pack(expand=True)
+        loading_label.pack(expand=True, pady=(10, 5))
+        
+        # Add progress bar
+        progress_bar = ttk.Progressbar(loading_dialog, mode='determinate', length=400, maximum=100)
+        progress_bar.pack(pady=(5, 10), padx=20)
+        
         loading_dialog.update()
         
+        # Store results from thread
+        result_container = {'slideshow': None, 'error': None}
+        
+        # Store progress state (accessed by both threads)
+        progress_state = {'current': 0, 'total': 0, 'message': "Loading slides, please wait..."}
+        
+        # Create progress callback that updates state
+        def update_progress(current, total, message=""):
+            """Called from worker thread - update shared state"""
+            progress_state['current'] = current
+            progress_state['total'] = total
+            if message:
+                progress_state['message'] = message
+        
+        # Load slides in background thread
+        def load_thread():
+            try:
+                from slideshow.slideshowmodel import Slideshow
+                
+                # Create slideshow and load slides with progress callback
+                slideshow = Slideshow(self.config_data, log_callback=self.log_message, progress_callback=update_progress)
+                
+                result_container['slideshow'] = slideshow
+                
+            except Exception as e:
+                import traceback
+                result_container['error'] = {
+                    'exception': e,
+                    'traceback': traceback.format_exc()
+                }
+        
+        # Start loading thread
+        thread = threading.Thread(target=load_thread, daemon=True)
+        thread.start()
+        
+        # Poll for completion and update progress in a blocking loop
+        while thread.is_alive():
+            # Update GUI with current progress state
+            try:
+                current = progress_state['current']
+                total = progress_state['total']
+                message = progress_state['message']
+                
+                if total > 0:
+                    percent = int((current / total) * 100)
+                    progress_bar['value'] = percent
+                    loading_label.config(text=message)
+                
+                # Process pending events
+                loading_dialog.update()
+            except:
+                break  # Dialog was destroyed
+            
+            # Wait 50ms before next check
+            time.sleep(0.05)
+        
+        # Thread finished - cleanup
         try:
-            from slideshow.slideshowmodel import Slideshow
-            
-            # Create slideshow and load slides (model handles all the logic)
-            slideshow = Slideshow(self.config_data, log_callback=self.log_message, progress_callback=None)
-            
-            # Cache the loaded slides for preview and future exports
-            self.cached_slides = slideshow.slides
-            
             loading_dialog.destroy()
-            
-        except Exception as e:
-            loading_dialog.destroy()
-            self.log_message(f"Error loading slides: {e}")
+        except:
+            pass
+        
+        if result_container['error']:
+            # Handle error
+            error = result_container['error']
+            self.log_message(f"Error loading slides: {error['exception']}")
+            self.log_message(f"Traceback:\n{error['traceback']}")
+            wide_messagebox("error", "Error", f"Failed to load slides:\n{error['exception']}")
             self.cached_slides = None
+        elif result_container['slideshow']:
+            # Success - cache the slides
+            self.cached_slides = result_container['slideshow'].slides
+            
+            # Now open the preview dialog
+            if self.cached_slides:
+                ImageRotatorDialog(self, self.cached_slides)
+
     
     def _invalidate_slide_cache(self):
         """Invalidate cached slides when input folder or sort settings change"""
@@ -1897,16 +1961,13 @@ class ImageRotatorDialog:
         
         self.filename_label.config(text=filename)
         
-        # Load image
+        # Load image using the slide's preview method
         try:
-            img = Image.open(image_path)
+            img = slide.get_preview_image()
             
-            # Extract creation date from EXIF while we have the image open
+            # Extract creation date from EXIF
             date_str = self._extract_creation_date_from_image(img, image_path)
             self.date_label.config(text=date_str)
-            
-            # Apply EXIF orientation to display portrait images correctly
-            img = ImageOps.exif_transpose(img)
             
             # Resize to fit canvas while maintaining aspect ratio
             canvas_width = self.canvas.winfo_width()
@@ -1974,11 +2035,10 @@ class ImageRotatorDialog:
         self.filename_label.config(text=f"[MULTI] {filenames}")
         self.date_label.config(text="Multi-slide composite (3 images)")
         
-        # Generate composite preview
+        # Generate composite preview using slide's preview method
         try:
-            composite = slide._create_composite()
-            if composite:
-                img = composite
+            img = slide.get_preview_image()
+            if img:
                 
                 # Resize to fit canvas
                 canvas_width = self.canvas.winfo_width() or 1000

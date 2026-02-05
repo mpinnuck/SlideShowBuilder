@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+from PIL import Image
 from slideshow.config import cfg, DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
@@ -84,6 +85,12 @@ class VideoSlide(SlideItem):
             log_callback(f"Video slide rendered successfully: {clip_path}")
 
         return clip_path
+    
+    def _load_preview_image(self) -> Image.Image:
+        """Extract a preview frame from the video source."""
+        from slideshow.transitions.utils import extract_frame
+        # Extract first frame from the source video
+        return extract_frame(self.path, last=False)
     
     def _check_orientation(self) -> bool:
         """Check if the video is in portrait orientation by examining video metadata."""
