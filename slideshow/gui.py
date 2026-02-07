@@ -615,11 +615,12 @@ class GUI(tk.Tk):
                 project_folder = entry.get("path", "")
                 
                 if project_folder:
+                    project_path = Path(project_folder)
+                    
                     # Load the project from its saved path (project folder)
-                    self.log_message(f"Loading project from history: {selected_name} at {project_folder}")
+                    self.log_message(f"Loading project from history: {selected_name} at {project_path}")
                     try:
                         # Build default paths from project folder
-                        project_path = Path(project_folder)
                         default_input_folder = str(project_path / "Slides")
                         output_folder = str(project_path / "Output")
                         
@@ -648,6 +649,8 @@ class GUI(tk.Tk):
                         self.multislide_freq_var.set(config.get("multislide_frequency", 10))
                         self.video_quality_var.set(config.get("video_quality", "maximum"))
                         self.trans_dur_var.set(config.get("transition_duration", 1))
+                        self.recurse_var.set(config.get("recurse_folders", False))
+                        self.sort_by_filename_var.set(config.get("sort_by_filename", False))
                         
                         # Update transition dropdown
                         self.transition_var.set(config.get("transition_type", "fade"))
@@ -659,6 +662,12 @@ class GUI(tk.Tk):
                         
                         self.log_message(f"Loaded project: {selected_name}")
                         self._check_play_button_state()
+                        
+                        # If we corrected the path, update the history to fix it permanently
+                        if str(project_path) != project_folder:
+                            add_to_project_history(selected_name, str(project_path))
+                            self._refresh_project_history()
+                            self.log_message(f"Updated project history with corrected path")
                         
                     except Exception as e:
                         self._updating_ui = False
@@ -680,49 +689,6 @@ class GUI(tk.Tk):
         self.input_var.set(new_input)
         self.output_var.set(new_output)
         self._update_project_path_display()
-    
-    def _load_project_from_path(self, project_path: str, project_name: str):
-        """Load a project from its path"""
-        try:
-            # Extract output folder (parent of project folder)
-            project_path_obj = Path(project_path)
-            output_folder = str(project_path_obj.parent)
-            
-            # Load config from project
-            config = load_config(output_folder)
-            
-            # Update UI with loaded config
-            self._updating_ui = True
-            self.config_data = config
-            
-            # Update all UI fields
-            self.name_var.set(config.get("project_name", project_name))
-            self.input_var.set(config.get("input_folder", ""))
-            self.output_var.set(output_folder)
-            self.soundtrack_var.set(config.get("soundtrack", ""))
-            self.photo_dur_var.set(config.get("photo_duration", 3))
-            self.video_dur_var.set(config.get("video_duration", 10))
-            self.multislide_freq_var.set(config.get("multislide_frequency", 10))
-            self.video_quality_var.set(config.get("video_quality", "maximum"))
-            self.trans_dur_var.set(config.get("transition_duration", 1))
-            
-            # Update transition dropdown
-            self.transition_var.set(config.get("transition_type", "fade"))
-            
-            self._updating_ui = False
-            
-            self.log_message(f"Loaded project: {project_name}")
-            
-            # Update global settings to remember this project
-            app_settings = load_app_settings()
-            app_settings["last_project_path"] = str(get_project_config_path(output_folder))
-            save_app_settings(app_settings)
-            
-            self._check_play_button_state()
-            
-        except Exception as e:
-            self._updating_ui = False
-            self.log_message(f"Error loading project: {e}")
     
     def _refresh_project_history(self):
         """Refresh the project history dropdown"""
@@ -805,6 +771,8 @@ class GUI(tk.Tk):
             self.multislide_freq_var.set(config.get("multislide_frequency", 10))
             self.video_quality_var.set(config.get("video_quality", "maximum"))
             self.trans_dur_var.set(config.get("transition_duration", 1))
+            self.recurse_var.set(config.get("recurse_folders", False))
+            self.sort_by_filename_var.set(config.get("sort_by_filename", False))
             
             # Update transition dropdown
             self.transition_var.set(config.get("transition_type", "fade"))
@@ -1065,6 +1033,9 @@ class GUI(tk.Tk):
             self.transition_var.set(self.config_data.get("transition_type", "fade"))
             self.trans_dur_var.set(self.config_data.get("transition_duration", 1))
             self.multislide_freq_var.set(self.config_data.get("multislide_frequency", 10))
+            self.video_quality_var.set(self.config_data.get("video_quality", "maximum"))
+            self.recurse_var.set(self.config_data.get("recurse_folders", False))
+            self.sort_by_filename_var.set(self.config_data.get("sort_by_filename", False))
         finally:
             self._updating_ui = False
 
@@ -1139,9 +1110,19 @@ class GUI(tk.Tk):
         else:
             self.log_message(f"Slideshow not found: {output_path}. Please export the slideshow first.")
     
-    def _on_progress(self, current, total):
+    def _on_progress(self, current, total, message=None):
         """Thread-safe progress update callback"""
-        self.after(0, lambda: self.update_progress(current, total))
+        if message:
+            self.after(0, lambda: self._update_progress_with_message(current, total, message))
+        else:
+            self.after(0, lambda: self.update_progress(current, total))
+    
+    def _update_progress_with_message(self, current, total, message):
+        """Update progress bar and optionally log message"""
+        self.update_progress(current, total)
+        # Log message with carriage return to overwrite previous progress messages
+        if message:
+            self.log_message(message + "\r")
     
     def _on_log_message(self, message):
         """Thread-safe log message callback"""
@@ -1357,22 +1338,34 @@ class GUI(tk.Tk):
             return
         
         try:
-            # Rename the project folder
+            # Check if input folder is inside the project folder BEFORE renaming
+            current_input = Path(self.input_var.get().strip()) if self.input_var.get().strip() else None
+            input_is_internal = False
+            
+            if current_input and current_input.exists():
+                try:
+                    # Check if current input is relative to old project folder
+                    current_input.relative_to(current_project_folder)
+                    input_is_internal = True
+                except ValueError:
+                    # Input folder is external (like NAS)
+                    input_is_internal = False
+            
+            # Now rename the project folder
             self.log_message(f"Renaming project folder from {current_project_folder.name} to {sanitized_new}...")
             current_project_folder.rename(new_project_folder)
             
-            # Check if input folder is inside the old project folder
-            current_input = Path(self.input_var.get().strip())
-            try:
-                # Check if current input is relative to old project folder
-                current_input.relative_to(current_project_folder)
-                # It is inside the project - update to new location
+            # Update input path based on whether it was internal or external
+            if input_is_internal:
                 new_input_path = str(new_project_folder / "Slides")
                 self.log_message(f"Input folder updated to new project location: {new_input_path}")
-            except ValueError:
-                # Input folder is external (like NAS) - keep it unchanged
+            elif current_input:
                 new_input_path = str(current_input)
                 self.log_message(f"Input folder unchanged (external location): {new_input_path}")
+            else:
+                # No input folder was set, use default in new project
+                new_input_path = str(new_project_folder / "Slides")
+                self.log_message(f"Input folder set to new project location: {new_input_path}")
             
             new_output_path = str(new_project_folder / "Output")
             
@@ -1457,7 +1450,7 @@ class GUI(tk.Tk):
             app_settings["project_history"] = app_settings.get("project_history", [])
             app_settings["project_history"].insert(0, {
                 "name": new_name,
-                "path": str(new_config_path)
+                "path": str(new_project_folder)
             })
             
             # Keep only last 10 entries

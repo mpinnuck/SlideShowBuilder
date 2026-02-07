@@ -189,8 +189,22 @@ class Config:
         config_path = self._get_project_config_path(output_folder)
         is_new_folder = not config_path.parent.exists()
         
+        # Check if parent folder is actually a file (corruption from old bug)
+        if config_path.parent.exists() and config_path.parent.is_file():
+            print(f"[Config] ERROR: Found file where project folder should be: {config_path.parent}")
+            print(f"[Config] This is likely due to a previous bug. Attempting to fix...")
+            # The file is probably an old config file in the wrong place
+            # Move it aside temporarily
+            backup_path = config_path.parent.parent / f"{config_path.parent.name}.backup"
+            config_path.parent.rename(backup_path)
+            print(f"[Config] Moved corrupted file to: {backup_path}")
+        
         # Ensure project folder exists
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+        except FileExistsError as e:
+            print(f"[Config] ERROR: Failed to create project folder: {e}")
+            raise
         
         # Create output folder and cache structure for new folders
         if is_new_folder:
@@ -217,11 +231,27 @@ class Config:
             print(f"[Config] WARNING: Failed to save to {config_path} ({e})")
     
     def _get_project_config_path(self, output_folder: str) -> Path:
-        """Get the path to the project config file."""
+        """Get the path to the project config file.
+        
+        Args:
+            output_folder: Path to project output folder (e.g., /path/to/ProjectName/Output)
+            
+        Returns:
+            Path to config file (e.g., /path/to/ProjectName/slideshow_config.json)
+        """
         if not output_folder:
             return Path(self.PROJECT_CONFIG_FILE)
-        # Config file is in the parent folder (project folder), not the output folder
-        project_folder = Path(output_folder).parent
+        
+        output_path = Path(output_folder)
+        
+        # Defensive: strip config filename if someone passed the full config path
+        # (Loading/rename functions now prevent this, but keep for robustness)
+        if output_path.name == "slideshow_config.json":
+            output_path = output_path.parent
+        
+        # Normal case: output folder is ProjectName/Output
+        # Config file is in the parent (project) folder
+        project_folder = output_path.parent
         return project_folder / self.PROJECT_CONFIG_FILE
     
     # =================================================================
