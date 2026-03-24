@@ -37,7 +37,11 @@ class Config:
     DEFAULT_APP_SETTINGS = {
         "last_project_path": "",
         "project_history": [],  # List of recent projects {"name": str, "path": str}, newest first (max 10)
-        "slideshows_base_dir": str(Path.home() / "SlideShowBuilder")  # Base directory for slideshows
+        "slideshows_base_dir": str(Path.home() / "SlideShowBuilder"),  # Base directory for slideshows
+        "ffmpeg_path": "",      # Path to ffmpeg binary (empty = auto-detect)
+        "ffprobe_path": "",     # Path to ffprobe binary (empty = auto-detect)
+        "default_font_path": "",  # Default font for intro titles (empty = auto-detect per OS)
+        "font_search_paths": []   # Additional font directories to search
     }
     
     # Default project-level settings
@@ -61,7 +65,7 @@ class Config:
             "enabled": False,
             "text": "Project Title\nHere",
             "duration": 5.0,
-            "font_path": "/System/Library/Fonts/Arial.ttf",
+            "font_path": "",  # Empty = use default_font_path from app settings
             "font_size": 120,
             "font_weight": "normal",
             "line_spacing": 1.2,
@@ -255,6 +259,203 @@ class Config:
         return project_folder / self.PROJECT_CONFIG_FILE
     
     # =================================================================
+    # Platform Path Helpers
+    # =================================================================
+
+    @staticmethod
+    def _get_platform_font_paths() -> list:
+        """Get default font search paths for the current OS."""
+        import sys
+        if sys.platform == "darwin":
+            return [
+                "/System/Library/Fonts/Arial.ttf",
+                "/System/Library/Fonts/Helvetica.ttc",
+                "/Library/Fonts/Arial.ttf",
+                "/System/Library/Fonts/Supplemental/Arial.ttf",
+            ]
+        elif sys.platform == "win32":
+            windir = os.environ.get("WINDIR", r"C:\Windows")
+            return [
+                os.path.join(windir, "Fonts", "arial.ttf"),
+                os.path.join(windir, "Fonts", "calibri.ttf"),
+                os.path.join(windir, "Fonts", "segoeui.ttf"),
+            ]
+        else:  # Linux / other
+            return [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            ]
+
+    @staticmethod
+    def _get_platform_font_dirs() -> list:
+        """Get default font directories for the current OS."""
+        import sys
+        if sys.platform == "darwin":
+            return ["/System/Library/Fonts", "/Library/Fonts", "/System/Library/Fonts/Supplemental"]
+        elif sys.platform == "win32":
+            windir = os.environ.get("WINDIR", r"C:\Windows")
+            return [os.path.join(windir, "Fonts")]
+        else:
+            return ["/usr/share/fonts", "/usr/local/share/fonts"]
+
+    @staticmethod
+    def _get_platform_ffmpeg_search_paths() -> list:
+        """Get OS-specific paths to search for ffmpeg/ffprobe."""
+        import sys
+        if sys.platform == "darwin":
+            return ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]
+        elif sys.platform == "win32":
+            return [
+                os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "ffmpeg", "bin"),
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "ffmpeg", "bin"),
+            ]
+        else:
+            return ["/usr/bin", "/usr/local/bin", "/snap/bin"]
+
+    def get_default_font_path(self) -> str:
+        """Get the default font path from app settings, falling back to OS detection.
+        
+        Returns:
+            Path to a usable font file, or empty string if none found.
+        """
+        settings = self.load_app_settings()
+        configured = settings.get("default_font_path", "")
+        if configured and Path(configured).exists():
+            return configured
+
+        # Auto-detect: try platform-specific paths
+        for font_path in self._get_platform_font_paths():
+            if Path(font_path).exists():
+                return font_path
+        return ""
+
+    def get_font_search_paths(self, weight: str = "normal") -> list:
+        """Get ordered list of font paths to try, respecting app settings.
+        
+        Args:
+            weight: Font weight ("light", "normal", "bold")
+            
+        Returns:
+            List of font file paths to try in order.
+        """
+        import sys
+        settings = self.load_app_settings()
+        
+        # Start with user-configured extra font directories
+        extra_dirs = settings.get("font_search_paths", [])
+        result = []
+        for d in extra_dirs:
+            p = Path(d)
+            if p.is_dir():
+                result.extend(str(f) for f in sorted(p.glob("*.ttf")) + sorted(p.glob("*.otf")))
+
+        # Add configured default font
+        configured = settings.get("default_font_path", "")
+        if configured and Path(configured).exists():
+            result.append(configured)
+
+        # Add platform-specific fallbacks based on weight
+        if sys.platform == "darwin":
+            weight_fonts = {
+                "light": [
+                    "/System/Library/Fonts/Arial.ttf",
+                    "/System/Library/Fonts/Helvetica.ttc",
+                    "/Library/Fonts/Arial.ttf",
+                    "/System/Library/Fonts/Supplemental/Arial.ttf",
+                ],
+                "normal": [
+                    "/System/Library/Fonts/Arial.ttf",
+                    "/System/Library/Fonts/Helvetica.ttc",
+                    "/Library/Fonts/Arial.ttf",
+                    "/System/Library/Fonts/Supplemental/Arial.ttf",
+                ],
+                "bold": [
+                    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+                    "/System/Library/Fonts/Arial Bold.ttf",
+                    "/System/Library/Fonts/Helvetica.ttc",
+                    "/Library/Fonts/Arial Bold.ttf",
+                ],
+            }
+        elif sys.platform == "win32":
+            windir = os.environ.get("WINDIR", r"C:\Windows")
+            weight_fonts = {
+                "light": [os.path.join(windir, "Fonts", "arial.ttf")],
+                "normal": [os.path.join(windir, "Fonts", "arial.ttf")],
+                "bold": [os.path.join(windir, "Fonts", "arialbd.ttf")],
+            }
+        else:
+            weight_fonts = {
+                "light": ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"],
+                "normal": ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"],
+                "bold": ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"],
+            }
+
+        result.extend(weight_fonts.get(weight, weight_fonts["normal"]))
+        return result
+
+    def get_font_initial_dir(self) -> str:
+        """Get a sensible initial directory for font file browser dialogs."""
+        settings = self.load_app_settings()
+        
+        # Use configured font's directory if available
+        configured = settings.get("default_font_path", "")
+        if configured:
+            parent = str(Path(configured).parent)
+            if Path(parent).is_dir():
+                return parent
+
+        # Extra dirs from settings
+        extra = settings.get("font_search_paths", [])
+        for d in extra:
+            if Path(d).is_dir():
+                return d
+
+        # Platform default
+        dirs = self._get_platform_font_dirs()
+        for d in dirs:
+            if Path(d).is_dir():
+                return d
+        return str(Path.home())
+
+    def get_ffmpeg_search_paths(self) -> list:
+        """Get ordered paths to search for ffmpeg/ffprobe, respecting app settings.
+        
+        Returns:
+            List of directory paths to search.
+        """
+        settings = self.load_app_settings()
+        result = []
+
+        # User-configured paths first (from ffmpeg_path setting directory)
+        for key in ("ffmpeg_path", "ffprobe_path"):
+            configured = settings.get(key, "")
+            if configured:
+                d = str(Path(configured).parent)
+                if d not in result:
+                    result.append(d)
+
+        # Then platform defaults
+        for d in self._get_platform_ffmpeg_search_paths():
+            if d not in result:
+                result.append(d)
+
+        return result
+
+    def get_ffmpeg_configured_path(self, name: str) -> str:
+        """Get a user-configured path for ffmpeg or ffprobe from app settings.
+        
+        Args:
+            name: 'ffmpeg' or 'ffprobe'
+            
+        Returns:
+            Configured path string, or empty string if not set.
+        """
+        settings = self.load_app_settings()
+        key = f"{name}_path"
+        return settings.get(key, "")
+
+    # =================================================================
     # App Settings Methods (project history, last project)
     # =================================================================
     
@@ -274,15 +475,17 @@ class Config:
         return settings
     
     def save_app_settings(self, settings: dict):
-        """Save global app settings to ~/SlideShowBuilder/slideshow_settings.json"""
-        self.APP_SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+        """Save global app settings to ~/SlideShowBuilder/slideshow_settings.json
         
-        merged = self.DEFAULT_APP_SETTINGS.copy()
-        merged.update(settings)
+        Only writes keys that are already present in the passed-in settings dict.
+        New default keys are available in memory via load_app_settings() but won't
+        be injected into the file until explicitly set by the user or app logic.
+        """
+        self.APP_SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
         
         try:
             with open(self.APP_SETTINGS_FILE, "w") as f:
-                json.dump(merged, f, indent=2)
+                json.dump(settings, f, indent=2)
         except OSError as e:
             print(f"[Config] WARNING: Failed to save app settings ({e})")
     

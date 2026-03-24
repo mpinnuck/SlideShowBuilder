@@ -6,6 +6,7 @@ Searches common installation locations once and returns cached paths.
 """
 
 import subprocess
+import os
 from typing import Optional
 
 
@@ -24,7 +25,7 @@ class FFmpegPaths:
     
     def _find_executable(self, name: str) -> str:
         """
-        Find an executable in common locations.
+        Find an executable: check app settings first, then common locations.
         
         Args:
             name: Executable name ('ffmpeg' or 'ffprobe')
@@ -32,29 +33,41 @@ class FFmpegPaths:
         Returns:
             Path to executable, or the name itself if not found
         """
-        # Try common locations for both Intel and Apple Silicon Macs
-        search_paths = [
-            name,  # Try PATH first
-            f'/usr/local/bin/{name}',  # Homebrew Intel
-            f'/opt/homebrew/bin/{name}',  # Homebrew Apple Silicon
-            f'/usr/bin/{name}',  # System location
-        ]
-        
-        for path in search_paths:
-            try:
-                subprocess.run(
-                    [path, "-version"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=True,
-                    timeout=2
-                )
-                return path
-            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-                continue
+        from slideshow.config import Config
+        cfg = Config.instance()
+
+        # 1. Check user-configured path from app settings
+        configured = cfg.get_ffmpeg_configured_path(name)
+        if configured and self._test_executable(configured):
+            return configured
+
+        # 2. Try PATH
+        if self._test_executable(name):
+            return name
+
+        # 3. Search platform-specific directories from app settings
+        for search_dir in cfg.get_ffmpeg_search_paths():
+            candidate = os.path.join(search_dir, name)
+            if self._test_executable(candidate):
+                return candidate
         
         # Fallback to executable name and let it fail with a clear error
         return name
+
+    @staticmethod
+    def _test_executable(path: str) -> bool:
+        """Test whether a path points to a working executable."""
+        try:
+            subprocess.run(
+                [path, "-version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=2
+            )
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
     
     def _initialize(self):
         """Initialize paths by searching for executables."""

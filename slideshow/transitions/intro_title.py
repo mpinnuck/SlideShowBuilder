@@ -27,7 +27,8 @@ class IntroTitle:
         self.enabled = self.settings.get("enabled", False)
         self.text = self.settings.get("text", "")
         self.duration = self.settings.get("duration", 5.0)
-        self.font_path = self.settings.get("font_path", "/System/Library/Fonts/Arial.ttf")
+        configured_font = self.settings.get("font_path", "")
+        self.font_path = configured_font if configured_font else cfg.get_default_font_path()
         self.font_size = self.settings.get("font_size", 120)
         self.font_weight = self.settings.get("font_weight", "normal")
         self.line_spacing = self.settings.get("line_spacing", 1.2)  # Line spacing multiplier
@@ -154,36 +155,15 @@ class IntroTitle:
         return output_path
 
     def _load_font_with_weight(self):
-        """Load font with smart fallbacks based on font weight setting and user config."""
+        """Load font with smart fallbacks based on font weight setting and app settings."""
         import os
         
-        # Start with user-configured font path
-        primary_font = self.font_path if self.font_path else "/System/Library/Fonts/Arial.ttf"
-        
-        # Font weight to font file mapping for macOS (as fallbacks)
-        fallback_fonts = {
-            "light": [
-                "/System/Library/Fonts/Arial.ttf",
-                "/System/Library/Fonts/Helvetica.ttc",
-                "/Library/Fonts/Arial.ttf",
-                "/System/Library/Fonts/Supplemental/Arial.ttf"
-            ],
-            "normal": [
-                "/System/Library/Fonts/Arial.ttf",
-                "/System/Library/Fonts/Helvetica.ttc", 
-                "/Library/Fonts/Arial.ttf",
-                "/System/Library/Fonts/Supplemental/Arial.ttf"
-            ],
-            "bold": [
-                "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-                "/System/Library/Fonts/Arial Bold.ttf",
-                "/System/Library/Fonts/Helvetica.ttc",
-                "/Library/Fonts/Arial Bold.ttf"
-            ]
-        }
+        # Build font search list: user font first, then weight-based fallbacks from Config
+        primary_font = self.font_path if self.font_path else cfg.get_default_font_path()
+        fallback_paths = cfg.get_font_search_paths(self.font_weight)
         
         # Create list of fonts to try: user font first, then fallbacks
-        fonts_to_try = [primary_font] + fallback_fonts.get(self.font_weight, fallback_fonts["normal"])
+        fonts_to_try = [primary_font] + fallback_paths
         
         # Try each font path until one works
         for font_path in fonts_to_try:
