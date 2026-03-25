@@ -1,6 +1,10 @@
-from pathlib import Path
+import hashlib
+import os
 import subprocess
+from pathlib import Path
+
 from PIL import Image
+
 from slideshow.config import cfg, DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
@@ -30,28 +34,26 @@ class VideoSlide(SlideItem):
             "video_quality": cfg.get('video_quality', 'maximum')  # Include quality in cache key
         }
         
+        # Create a unique output filename based on parameters
+        param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
+        clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
+        self._rendered_clip = clip_path
+
         # Check cache first
         cached_clip = FFmpegCache.get_cached_clip(self.path, cache_params)
         if cached_clip:
             if log_callback:
                 log_callback(f"[FFmpegCache] Using cached video clip: {cached_clip.name}")
             
-            # Create a unique output filename in working directory
-            import hashlib
-            param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
-            clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
-            self._rendered_clip = clip_path
-            
-            # Copy cached clip to working directory
-            import shutil
-            shutil.copy2(cached_clip, clip_path)
+            # Hard-link cached clip to working directory (zero-copy, same filesystem)
+            try:
+                os.link(cached_clip, clip_path)
+            except OSError:
+                import shutil
+                shutil.copy2(cached_clip, clip_path)
             return clip_path
 
-        # Create a unique output filename based on parameters
-        import hashlib
-        param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
-        clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
-        self._rendered_clip = clip_path
+        encoding_params = cfg.get_ffmpeg_encoding_params()
 
         ffmpeg_cmd = [
             FFmpegPaths.ffmpeg(), "-y",
@@ -63,7 +65,7 @@ class VideoSlide(SlideItem):
             ),
             "-t", f"{self.duration:.3f}",
             "-r", str(self.fps),
-            "-c:v", "libx264",
+            *encoding_params,
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-shortest",

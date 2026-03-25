@@ -9,6 +9,7 @@ and delegates rendering to the chosen sub-transition.
 """
 
 import hashlib
+import os
 from pathlib import Path
 from slideshow.config import cfg
 from slideshow.transitions.base_transition import BaseTransition
@@ -148,9 +149,12 @@ class OrigamiTransition(BaseTransition):
             cached_clip = FFmpegCache.get_cached_clip(virtual_input_path, cache_params)
             
             if cached_clip and cached_clip.exists():
-                # Copy cached result to output location
-                import shutil
-                shutil.copy2(cached_clip, output_path)
+                # Hard-link cached result to output location (zero-copy, same filesystem)
+                try:
+                    os.link(cached_clip, output_path)
+                except OSError:
+                    import shutil
+                    shutil.copy2(cached_clip, output_path)
                 return 1  # Consumed one slide pair
         
         # Cache miss - render the transition

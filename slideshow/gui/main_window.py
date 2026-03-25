@@ -1108,6 +1108,8 @@ class GUI(tk.Tk):
                               "Please add photos or videos before exporting."))
                 return
             
+            self.after(0, lambda: self.log_message("Loading slides..."))
+            
             # Ensure config_data is synchronized with current UI state before export
             current_config = self._get_current_config()
             

@@ -7,6 +7,8 @@ A slide that composites multiple input images into a single slide with 70/30 lay
 
 from pathlib import Path
 from PIL import Image, ImageOps
+import hashlib
+import os
 import tempfile
 import subprocess
 import shutil
@@ -492,20 +494,20 @@ class MultiSlide(SlideItem):
                 log_callback(f"[FFmpegCache] Using cached multi-slide clip: {cached_clip.name}")
             
             # Create a unique output filename in working directory
-            import hashlib
             param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
             # Use first filename as identifier instead of index
             first_file_stem = Path(self.media_files[0]).stem
             clip_path = working_dir / f"multi_{first_file_stem}_{param_hash}.mp4"
             self._rendered_clip = clip_path
             
-            # Copy cached clip to working directory
-            import shutil
-            shutil.copy2(cached_clip, clip_path)
+            # Hard-link cached clip to working directory (zero-copy, same filesystem)
+            try:
+                os.link(cached_clip, clip_path)
+            except OSError:
+                shutil.copy2(cached_clip, clip_path)
             return clip_path
 
         # Create a unique output filename based on parameters
-        import hashlib
         param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
         # Use first filename as identifier instead of index
         first_file_stem = Path(self.media_files[0]).stem

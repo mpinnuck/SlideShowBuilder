@@ -1,6 +1,8 @@
 # slideshow/transitions/fade_transition.py
-from pathlib import Path
+import os
 import subprocess
+from pathlib import Path
+
 from slideshow.config import cfg
 from .base_transition import BaseTransition
 from .ffmpeg_paths import FFmpegPaths
@@ -48,15 +50,19 @@ class FadeTransition(BaseTransition):
         # Check cache first
         cached_transition = FFmpegCache.get_cached_clip(virtual_path, cache_params)
         if cached_transition:
-            # Copy cached transition to output path
-            import shutil
-            shutil.copy2(cached_transition, output_path)
+            # Hard-link cached transition to output path (zero-copy, same filesystem)
+            try:
+                os.link(cached_transition, output_path)
+            except OSError:
+                import shutil
+                shutil.copy2(cached_transition, output_path)
             return 1
         
         self.ensure_output_dir(output_path)
 
-        from_png = output_path.parent / "from.png"
-        to_png = output_path.parent / "to.png"
+        # Use unique temp filenames per transition to avoid collisions during parallel rendering
+        from_png = output_path.parent / f"from_{output_path.stem}.png"
+        to_png = output_path.parent / f"to_{output_path.stem}.png"
 
         # Save the opening and closing frames to disk
         from_frame = from_slide.get_from_image()  # last frame of from_slide
@@ -84,7 +90,9 @@ class FadeTransition(BaseTransition):
             raise RuntimeError(
                 f"FadeTransition failed:\\nCommand: {' '.join(cmd)}\\nError:\\n{result.stderr}"
             )
-
+        # Clean up temp frame files
+        from_png.unlink(missing_ok=True)
+        to_png.unlink(missing_ok=True)
         # Store result in cache for future use
         FFmpegCache.store_clip(virtual_path, cache_params, output_path)
 

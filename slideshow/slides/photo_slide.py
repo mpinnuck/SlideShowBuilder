@@ -1,11 +1,17 @@
+import hashlib
+import os
+import subprocess
 from pathlib import Path
+
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
+
 from slideshow.config import cfg, DEFAULT_CONFIG
 from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.utils import load_and_resize_image
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
+from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
 
 class PhotoSlide(SlideItem):
@@ -31,28 +37,24 @@ class PhotoSlide(SlideItem):
             "video_quality": cfg.get('video_quality', 'maximum')  # Include quality in cache key
         }
         
+        # Create a unique output filename based on parameters
+        param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
+        clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
+        self._rendered_clip = clip_path
+
         # Check cache first
         cached_clip = FFmpegCache.get_cached_clip(self.path, cache_params)
         if cached_clip:
             if log_callback:
                 log_callback(f"[FFmpegCache] Using cached photo clip: {cached_clip.name}")
             
-            # Create a unique output filename in working directory
-            import hashlib
-            param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
-            clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
-            self._rendered_clip = clip_path
-            
-            # Copy cached clip to working directory
-            import shutil
-            shutil.copy2(cached_clip, clip_path)
+            # Hard-link cached clip to working directory (zero-copy, same filesystem)
+            try:
+                os.link(cached_clip, clip_path)
+            except OSError:
+                import shutil
+                shutil.copy2(cached_clip, clip_path)
             return clip_path
-
-        # Create a unique output filename based on parameters
-        import hashlib
-        param_hash = hashlib.md5(str(cache_params).encode()).hexdigest()[:8]
-        clip_path = working_dir / f"{self.path.stem}_{param_hash}.mp4"
-        self._rendered_clip = clip_path
 
         # Load image - use PIL for HEIC support, then convert to OpenCV format
         try:
@@ -89,39 +91,41 @@ class PhotoSlide(SlideItem):
         right = target_w - new_w - left
         framed = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-        # --- Write CFR video using FFmpeg for proper metadata ---
-        # Save the framed image as a temporary PNG
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
-            temp_png = Path(tmp_file.name)
-        
-        cv2.imwrite(str(temp_png), framed)
-        
-        # Use FFmpeg to create the video with proper duration metadata
-        from slideshow.transitions.ffmpeg_paths import FFmpegPaths
-        import subprocess
-        
-        total_frames = int(self.fps * self.duration)
-        
+        # --- Write CFR video by piping raw frame data directly to FFmpeg ---
+        target_w, target_h = self.resolution
+        encoding_params = cfg.get_ffmpeg_encoding_params()
+
         ffmpeg_cmd = [
             FFmpegPaths.ffmpeg(), "-y",
-            "-loop", "1",
-            "-i", str(temp_png),
-            "-t", f"{self.duration:.3f}",
+            "-f", "rawvideo",
+            "-vcodec", "rawvideo",
+            "-s", f"{target_w}x{target_h}",
+            "-pix_fmt", "bgr24",
             "-r", str(self.fps),
-            "-c:v", "libx264",
+            "-i", "pipe:0",
+            "-t", f"{self.duration:.3f}",
+            *encoding_params,
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
             str(clip_path)
         ]
-        
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-        
-        # Clean up temp file
-        temp_png.unlink(missing_ok=True)
-        
-        if result.returncode != 0:
-            raise RuntimeError(f"FFmpeg failed for photo slide {self.path}:\n{result.stderr}")
+
+        total_frames = int(self.fps * self.duration)
+        frame_bytes = framed.tobytes()
+
+        proc = subprocess.Popen(
+            ffmpeg_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        # Feed the same frame repeatedly for the requested duration
+        for _ in range(total_frames):
+            proc.stdin.write(frame_bytes)
+        stdout, stderr = proc.communicate()
+
+        if proc.returncode != 0:
+            raise RuntimeError(f"FFmpeg failed for photo slide {self.path}:\n{stderr.decode()}")
 
         # Store result in cache for future use
         FFmpegCache.store_clip(self.path, cache_params, clip_path)

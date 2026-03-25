@@ -7,6 +7,7 @@ Caches rendered video clips to avoid expensive re-computation.
 import hashlib
 import json
 import shutil
+import threading
 from pathlib import Path
 from typing import Optional, Union, Dict, Any
 import os
@@ -44,6 +45,7 @@ class FFmpegCache:
     _metadata: Dict[str, Any] = {}
     _enabled = True
     _initialized = False
+    _lock = threading.Lock()
     
     @classmethod
     def configure(cls, cache_dir: Union[str, Path]):
@@ -160,39 +162,40 @@ class FFmpegCache:
     @classmethod
     def get_cached_clip(cls, input_path: Path, params: Dict[str, Any]) -> Optional[Path]:
         """Check if a cached clip exists for the given input and parameters."""
-        if not cls._enabled or not cls._cache_dir:
-            stats = cls._metadata.setdefault("stats", {})
-            stats["misses"] = stats.get("misses", 0) + 1
-            return None
+        with cls._lock:
+            if not cls._enabled or not cls._cache_dir:
+                stats = cls._metadata.setdefault("stats", {})
+                stats["misses"] = stats.get("misses", 0) + 1
+                return None
+                
+            cache_key = cls._generate_cache_key(input_path, params)
             
-        cache_key = cls._generate_cache_key(input_path, params)
-        
-        # Check if entry exists in metadata
-        if cache_key not in cls._metadata.get("entries", {}):
-            stats = cls._metadata.setdefault("stats", {})
-            stats["misses"] = stats.get("misses", 0) + 1
-            cls._save_metadata()
-            return None
+            # Check if entry exists in metadata
+            if cache_key not in cls._metadata.get("entries", {}):
+                stats = cls._metadata.setdefault("stats", {})
+                stats["misses"] = stats.get("misses", 0) + 1
+                cls._save_metadata()
+                return None
+                
+            # Check if cached file actually exists
+            cached_file = cls._cache_dir / "clips" / f"{cache_key}.mp4"
+            if not cached_file.exists():
+                # Clean up stale metadata entry
+                del cls._metadata["entries"][cache_key]
+                stats = cls._metadata.setdefault("stats", {})
+                stats["misses"] = stats.get("misses", 0) + 1
+                cls._save_metadata()
+                return None
             
-        # Check if cached file actually exists
-        cached_file = cls._cache_dir / "clips" / f"{cache_key}.mp4"
-        if not cached_file.exists():
-            # Clean up stale metadata entry
-            del cls._metadata["entries"][cache_key]
+            # Cache hit!
             stats = cls._metadata.setdefault("stats", {})
-            stats["misses"] = stats.get("misses", 0) + 1
+            stats["hits"] = stats.get("hits", 0) + 1
+            
+            # Update access time for the entry
+            cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
             cls._save_metadata()
-            return None
-        
-        # Cache hit!
-        stats = cls._metadata.setdefault("stats", {})
-        stats["hits"] = stats.get("hits", 0) + 1
-        
-        # Update access time for the entry
-        cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
-        cls._save_metadata()
-        
-        return cached_file
+            
+            return cached_file
     
     @classmethod
     def store_clip(cls, input_path: Path, params: Dict[str, Any], output_path: Path) -> Optional[Path]:
@@ -209,15 +212,16 @@ class FFmpegCache:
             
             # Stat once and reuse for all metadata fields
             st = cached_file.stat()
-            cls._metadata["entries"][cache_key] = {
-                "type": "clip",
-                "input_path": str(input_path),
-                "params": params,
-                "created": st.st_mtime,
-                "last_accessed": st.st_mtime,
-                "size": st.st_size
-            }
-            cls._save_metadata()
+            with cls._lock:
+                cls._metadata["entries"][cache_key] = {
+                    "type": "clip",
+                    "input_path": str(input_path),
+                    "params": params,
+                    "created": st.st_mtime,
+                    "last_accessed": st.st_mtime,
+                    "size": st.st_size
+                }
+                cls._save_metadata()
             
             return cached_file
             
@@ -229,39 +233,40 @@ class FFmpegCache:
     @classmethod
     def get_cached_frame(cls, input_path: Path, params: Dict[str, Any]) -> Optional[Path]:
         """Check if a cached frame exists for the given input and parameters."""
-        if not cls._enabled or not cls._cache_dir:
-            stats = cls._metadata.setdefault("stats", {})
-            stats["misses"] = stats.get("misses", 0) + 1
-            return None
+        with cls._lock:
+            if not cls._enabled or not cls._cache_dir:
+                stats = cls._metadata.setdefault("stats", {})
+                stats["misses"] = stats.get("misses", 0) + 1
+                return None
+                
+            cache_key = cls._generate_cache_key(input_path, params)
             
-        cache_key = cls._generate_cache_key(input_path, params)
-        
-        # Check if entry exists in metadata
-        if cache_key not in cls._metadata.get("entries", {}):
-            stats = cls._metadata.setdefault("stats", {})
-            stats["misses"] = stats.get("misses", 0) + 1
-            cls._save_metadata()
-            return None
+            # Check if entry exists in metadata
+            if cache_key not in cls._metadata.get("entries", {}):
+                stats = cls._metadata.setdefault("stats", {})
+                stats["misses"] = stats.get("misses", 0) + 1
+                cls._save_metadata()
+                return None
+                
+            # Check if cached file actually exists
+            cached_file = cls._cache_dir / "frames" / f"{cache_key}.png"
+            if not cached_file.exists():
+                # Clean up stale metadata entry
+                del cls._metadata["entries"][cache_key]
+                stats = cls._metadata.setdefault("stats", {})
+                stats["misses"] = stats.get("misses", 0) + 1
+                cls._save_metadata()
+                return None
             
-        # Check if cached file actually exists
-        cached_file = cls._cache_dir / "frames" / f"{cache_key}.png"
-        if not cached_file.exists():
-            # Clean up stale metadata entry
-            del cls._metadata["entries"][cache_key]
+            # Cache hit!
             stats = cls._metadata.setdefault("stats", {})
-            stats["misses"] = stats.get("misses", 0) + 1
+            stats["hits"] = stats.get("hits", 0) + 1
+            
+            # Update access time for the entry
+            cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
             cls._save_metadata()
-            return None
-        
-        # Cache hit!
-        stats = cls._metadata.setdefault("stats", {})
-        stats["hits"] = stats.get("hits", 0) + 1
-        
-        # Update access time for the entry
-        cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
-        cls._save_metadata()
-        
-        return cached_file
+            
+            return cached_file
     
     @classmethod
     def store_frame(cls, input_path: Path, params: Dict[str, Any], output_path: Path) -> Optional[Path]:
@@ -278,15 +283,16 @@ class FFmpegCache:
             
             # Stat once and reuse for all metadata fields
             st = cached_file.stat()
-            cls._metadata["entries"][cache_key] = {
-                "type": "frame",
-                "input_path": str(input_path),
-                "params": params,
-                "created": st.st_mtime,
-                "last_accessed": st.st_mtime,
-                "size": st.st_size
-            }
-            cls._save_metadata()
+            with cls._lock:
+                cls._metadata["entries"][cache_key] = {
+                    "type": "frame",
+                    "input_path": str(input_path),
+                    "params": params,
+                    "created": st.st_mtime,
+                    "last_accessed": st.st_mtime,
+                    "size": st.st_size
+                }
+                cls._save_metadata()
             
             return cached_file
             
