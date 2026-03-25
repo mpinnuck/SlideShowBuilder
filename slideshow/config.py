@@ -602,6 +602,26 @@ class Config:
         
         preset = self.FFMPEG_ENCODING_PRESETS[preset_name]
         
+        # Use hardware VideoToolbox encoder on macOS if enabled
+        use_hw = self.get("hardware_acceleration", False)
+        if use_hw:
+            import sys
+            if sys.platform == "darwin":
+                # VideoToolbox uses average bitrate instead of CRF
+                vt_bitrates = {
+                    "maximum": "20M",
+                    "high":    "15M",
+                    "medium":  "10M",
+                    "fast":    "6M",
+                }
+                bitrate = vt_bitrates.get(preset_name, "15M")
+                return [
+                    "-c:v", "h264_videotoolbox",
+                    "-b:v", bitrate,
+                    "-profile:v", preset["profile"],
+                    "-level", preset["level"],
+                ]
+        
         return [
             "-c:v", "libx264",
             "-preset", preset["preset"],

@@ -207,6 +207,7 @@ class FFmpegCache:
         cached_file = cls._cache_dir / "clips" / f"{cache_key}.mp4"
         
         try:
+            cached_file.parent.mkdir(parents=True, exist_ok=True)
             # Copy the output file to cache
             shutil.copy2(output_path, cached_file)
             
@@ -278,6 +279,7 @@ class FFmpegCache:
         cached_file = cls._cache_dir / "frames" / f"{cache_key}.png"
         
         try:
+            cached_file.parent.mkdir(parents=True, exist_ok=True)
             # Copy the output file to cache
             shutil.copy2(output_path, cached_file)
             

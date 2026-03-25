@@ -618,12 +618,15 @@ class Slideshow:
             # --- Render slides (parallel — each slide is independent) ---
             self._log("")
             completed = 0
+            # VideoToolbox corrupts output with too many concurrent sessions; limit to 4
+            hw_accel = cfg.get('hardware_acceleration', False)
+            max_workers = 4 if hw_accel else 6
 
             def _render_slide(slide):
                 slide.render(self.working_dir)
                 return slide
 
-            with ThreadPoolExecutor(max_workers=4) as executor:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {executor.submit(_render_slide, s): s for s in self.slides}
                 for future in as_completed(futures):
                     if self.cancel_check and self.cancel_check():
@@ -648,21 +651,29 @@ class Slideshow:
                 self._intro_clip = intro.render(first_frame, intro_path)
 
 
-            # --- Render transitions ---
+            # --- Render transitions (parallel — each is independent, slides are read-only) ---
             self._log("")  # Newline before transition rendering
-            transition_clips = []
-            for i in range(total_items - 1):
-                # Check for cancellation
-                if self.cancel_check and self.cancel_check():
-                    self._log("[Slideshow] Cancelling export...")
-                    raise RuntimeError("Export cancelled by user")
-                
-                self._log(f"[Slideshow] Rendering transitions ({i+1}/{total_transitions})...{'\r' if i < total_transitions - 1 else '\n'}")
+            transition_clips = [None] * (total_items - 1)  # Pre-allocate ordered list
+            completed_trans = 0
+
+            def _render_transition(i):
                 trans_out = self.working_dir / f"trans_{i:03}.mp4"
                 self.transition.render(i, self.slides, trans_out)
-                transition_clips.append(trans_out)
-                if self.progress_callback:
-                    self.progress_callback(total_items + i + 1, total_weighted_steps)
+                return i, trans_out
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_render_transition, i): i for i in range(total_items - 1)}
+                for future in as_completed(futures):
+                    if self.cancel_check and self.cancel_check():
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        self._log("[Slideshow] Cancelling export...")
+                        raise RuntimeError("Export cancelled by user")
+                    idx, trans_out = future.result()
+                    transition_clips[idx] = trans_out
+                    completed_trans += 1
+                    self._log(f"[Slideshow] Rendering transitions ({completed_trans}/{total_transitions})...{'\r' if completed_trans < total_transitions else '\n'}")
+                    if self.progress_callback:
+                        self.progress_callback(total_items + completed_trans, total_weighted_steps)
 
             # --- Write concat file ---
             # Check for cancellation before assembly

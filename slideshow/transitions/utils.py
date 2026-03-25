@@ -58,21 +58,43 @@ def extract_frame(video_path, last=False):
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
         tmp_path = tmpfile.name
     try:
-        if last:
-            # Seek slightly before end to avoid sseof=0 edge cases
-            cmd = [FFmpegPaths.ffmpeg(), "-y", "-sseof", "-0.1", "-i", str(video_path),
-                   "-vframes", "1", tmp_path]
-        else:
-            cmd = [FFmpegPaths.ffmpeg(), "-y", "-i", str(video_path), "-vframes", "1", tmp_path]
+        ffmpeg_ok = False
+        try:
+            if last:
+                cmd = [FFmpegPaths.ffmpeg(), "-y", "-sseof", "-0.1", "-i", str(video_path),
+                       "-vframes", "1", tmp_path]
+            else:
+                cmd = [FFmpegPaths.ffmpeg(), "-y", "-i", str(video_path), "-vframes", "1", tmp_path]
 
-        result = subprocess.run(cmd, capture_output=True)
-        if result.returncode != 0:
-            # Fallback: extract first frame without seeking
-            cmd = [FFmpegPaths.ffmpeg(), "-y", "-i", str(video_path),
-                   "-vframes", "1", tmp_path]
-            result = subprocess.run(cmd, capture_output=True)
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            if result.returncode != 0:
+                cmd = [FFmpegPaths.ffmpeg(), "-y", "-i", str(video_path),
+                       "-vframes", "1", tmp_path]
+                result = subprocess.run(cmd, capture_output=True, timeout=30)
 
-        if result.returncode != 0 or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+            ffmpeg_ok = result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0
+        except subprocess.TimeoutExpired:
+            pass
+
+        if not ffmpeg_ok:
+            # Fallback: try OpenCV (handles some codecs FFmpeg CLI can't seek into)
+            import cv2
+            cap = cv2.VideoCapture(str(video_path))
+            try:
+                if last:
+                    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    if total > 1:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, total - 1)
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    img = Image.fromarray(frame_rgb)
+                    cv2.imwrite(tmp_path, frame)
+                    FFmpegCache.store_frame(Path(video_path), cache_params, Path(tmp_path))
+                    return img
+            finally:
+                cap.release()
+
             # Ultimate fallback: return a black frame
             print(f"[extract_frame] Warning: Could not extract frame from {video_path}, using black frame")
             return Image.new("RGB", (1920, 1080), (0, 0, 0))

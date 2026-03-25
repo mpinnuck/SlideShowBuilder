@@ -27,12 +27,13 @@ class VideoSlide(SlideItem):
         # Create cache key parameters for this specific rendering
         cache_params = {
             "operation": "video_slide_render",
-            "cache_version": 2,  # Bump to invalidate clips from previous encoding approaches
+            "cache_version": 3,  # Bump to invalidate corrupt VideoToolbox clips
             "duration": self.duration,
             "fps": self.fps,
             "resolution": self.resolution,
             "format": "mp4",
-            "video_quality": cfg.get('video_quality', 'maximum')  # Include quality in cache key
+            "video_quality": cfg.get('video_quality', 'maximum'),
+            "hardware_acceleration": cfg.get('hardware_acceleration', False)
         }
         
         # Create a unique output filename based on parameters

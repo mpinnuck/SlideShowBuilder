@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
-from PIL import Image, ImageTk
+from PIL import Image, ImageOps, ImageTk
 
 from slideshow.gui.helpers import wide_messagebox
 
@@ -111,9 +111,9 @@ class ImageRotatorDialog:
         self.multi_selector_frame = ttk.Frame(self.rotation_frame)
         ttk.Label(self.multi_selector_frame, text="Select Image:").pack(side=tk.LEFT, padx=5)
         self.multi_image_var = tk.IntVar(value=0)
-        ttk.Radiobutton(self.multi_selector_frame, text="1st", variable=self.multi_image_var, value=0).pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(self.multi_selector_frame, text="2nd", variable=self.multi_image_var, value=1).pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(self.multi_selector_frame, text="3rd", variable=self.multi_image_var, value=2).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(self.multi_selector_frame, text="1st", variable=self.multi_image_var, value=0, command=self._on_multi_image_select).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(self.multi_selector_frame, text="2nd", variable=self.multi_image_var, value=1, command=self._on_multi_image_select).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(self.multi_selector_frame, text="3rd", variable=self.multi_image_var, value=2, command=self._on_multi_image_select).pack(side=tk.LEFT, padx=2)
         ttk.Label(self.multi_selector_frame, text="│").pack(side=tk.LEFT, padx=10)
         
         # Standard rotation controls (work for both PhotoSlide and selected MultiSlide image)
@@ -252,8 +252,51 @@ class ImageRotatorDialog:
             fill="gray"
         )
     
+    def _on_multi_image_select(self):
+        """Called when a radio button is clicked to show the selected individual image."""
+        if not self.slides:
+            return
+        slide = self.slides[self.current_index]
+        from slideshow.slides.multi_slide import MultiSlide
+        if not isinstance(slide, MultiSlide):
+            return
+        
+        component_index = self.multi_image_var.get()
+        image_path = slide.media_files[component_index]
+        self.filename_label.config(text=f"[MULTI image {component_index + 1}] {image_path.name}")
+        self.date_label.config(text=f"Image {component_index + 1} of {len(slide.media_files)}")
+        
+        try:
+            img = Image.open(image_path)
+            img = ImageOps.exif_transpose(img)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            canvas_width = self.canvas.winfo_width() or 1000
+            canvas_height = self.canvas.winfo_height() or 600
+            
+            img_ratio = img.width / img.height
+            canvas_ratio = canvas_width / canvas_height
+            
+            if img_ratio > canvas_ratio:
+                new_width = canvas_width - 40
+                new_height = int(new_width / img_ratio)
+            else:
+                new_height = canvas_height - 40
+                new_width = int(new_height * img_ratio)
+            
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            self.photo = ImageTk.PhotoImage(img)
+            self.canvas.delete("all")
+            self.canvas.create_image(canvas_width // 2, canvas_height // 2, image=self.photo)
+        except Exception as e:
+            self.parent.log_message(f"Error loading MultiSlide component image: {e}")
+    
     def _show_multislide_preview(self, slide):
         """Show preview of MultiSlide composite"""
+        # Reset radio selection to first image
+        self.multi_image_var.set(0)
+        
         # Show the first image file name with [MULTI] indicator
         first_file = slide.media_files[0]
         filenames = " + ".join([f.name for f in slide.media_files])
@@ -314,7 +357,10 @@ class ImageRotatorDialog:
             if slide.rotate(degrees):
                 filename = slide.media_files[component_index].name
                 self.parent.log_message(f"Rotated MultiSlide image #{component_index + 1} ({filename}) by {degrees}°")
-                self._load_image()
+                # Invalidate cached preview so composite regenerates next time
+                slide._preview_image = None
+                # Show the rotated individual image (not the composite)
+                self._on_multi_image_select()
             else:
                 wide_messagebox("error", "Error", "Failed to rotate MultiSlide component image")
             return
