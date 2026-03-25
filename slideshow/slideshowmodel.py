@@ -1,4 +1,7 @@
 # slideshow/slideshowmodel.py
+import datetime
+import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -108,7 +111,6 @@ class Slideshow:
     # -------------------------------
     def _get_slide_cache_path(self) -> Path:
         """Get the path to the slide cache file for the current project."""
-        import hashlib
         # Create a unique cache file based on input folder and sort settings
         input_folder = self.config.get("input_folder", "")
         sort_key = f"{input_folder}_{self.config.get('sort_by_filename', False)}_{self.config.get('recurse_folders', False)}_{self.config.get('older_images_no_exif', False)}"
@@ -118,7 +120,6 @@ class Slideshow:
     def _save_slide_cache(self):
         """Save slide paths to cache for faster loading next time."""
         try:
-            import json
             from slideshow.slides.multi_slide import MultiSlide
             
             cache_path = self._get_slide_cache_path()
@@ -159,7 +160,6 @@ class Slideshow:
     def _load_slide_cache(self) -> bool:
         """Try to load slides from cache. Returns True if successful."""
         try:
-            import json
             cache_path = self._get_slide_cache_path()
             
             if not cache_path.exists():
@@ -339,17 +339,19 @@ class Slideshow:
                     return timestamp_cache[path]
                 
                 ext = path.suffix.lower()
-                stat = path.stat()
                 
                 # Default fallback: try creation time first (st_birthtime on macOS), then modification time
-                timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
+                try:
+                    stat = path.stat()
+                    timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
+                except OSError:
+                    timestamp = 0.0
                 
                 # For photos, try to get EXIF date
                 if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
                     try:
                         from PIL import Image
                         from PIL.ExifTags import TAGS
-                        import datetime
                         
                         with Image.open(path) as img:
                             exif = img._getexif()
@@ -366,9 +368,6 @@ class Slideshow:
                 # For videos, try to get creation date from metadata
                 elif ext in ('.mp4', '.mov'):
                     try:
-                        import subprocess
-                        import json
-                        
                         # Use ffprobe to get creation time
                         result = subprocess.run([
                             'ffprobe', '-v', 'quiet', '-print_format', 'json',
@@ -379,7 +378,6 @@ class Slideshow:
                             metadata = json.loads(result.stdout)
                             creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
                             if creation_time:
-                                import datetime
                                 # Handle various ISO 8601 formats
                                 for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
                                     try:
