@@ -52,6 +52,7 @@ class FadeTransition(BaseTransition):
         if cached_transition:
             # Hard-link cached transition to output path (zero-copy, same filesystem)
             try:
+                Path(output_path).unlink(missing_ok=True)
                 os.link(cached_transition, output_path)
             except OSError:
                 import shutil

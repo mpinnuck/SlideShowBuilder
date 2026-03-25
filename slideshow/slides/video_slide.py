@@ -27,6 +27,7 @@ class VideoSlide(SlideItem):
         # Create cache key parameters for this specific rendering
         cache_params = {
             "operation": "video_slide_render",
+            "cache_version": 2,  # Bump to invalidate clips from previous encoding approaches
             "duration": self.duration,
             "fps": self.fps,
             "resolution": self.resolution,
@@ -47,6 +48,7 @@ class VideoSlide(SlideItem):
             
             # Hard-link cached clip to working directory (zero-copy, same filesystem)
             try:
+                clip_path.unlink(missing_ok=True)
                 os.link(cached_clip, clip_path)
             except OSError:
                 import shutil

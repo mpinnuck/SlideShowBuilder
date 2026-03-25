@@ -151,6 +151,7 @@ class OrigamiTransition(BaseTransition):
             if cached_clip and cached_clip.exists():
                 # Hard-link cached result to output location (zero-copy, same filesystem)
                 try:
+                    output_path.unlink(missing_ok=True)
                     os.link(cached_clip, output_path)
                 except OSError:
                     import shutil

@@ -67,10 +67,15 @@ def extract_frame(video_path, last=False):
 
         result = subprocess.run(cmd, capture_output=True)
         if result.returncode != 0:
-            # Fallback to seeking 1s before end
-            cmd = [FFmpegPaths.ffmpeg(), "-y", "-sseof", "-1", "-i", str(video_path),
+            # Fallback: extract first frame without seeking
+            cmd = [FFmpegPaths.ffmpeg(), "-y", "-i", str(video_path),
                    "-vframes", "1", tmp_path]
-            subprocess.run(cmd, check=True, capture_output=True)  # Suppress verbose output
+            result = subprocess.run(cmd, capture_output=True)
+
+        if result.returncode != 0 or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+            # Ultimate fallback: return a black frame
+            print(f"[extract_frame] Warning: Could not extract frame from {video_path}, using black frame")
+            return Image.new("RGB", (1920, 1080), (0, 0, 0))
 
         # Store extracted frame in cache before returning
         FFmpegCache.store_frame(Path(video_path), cache_params, Path(tmp_path))

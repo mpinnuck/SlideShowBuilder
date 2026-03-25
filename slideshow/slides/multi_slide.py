@@ -502,6 +502,7 @@ class MultiSlide(SlideItem):
             
             # Hard-link cached clip to working directory (zero-copy, same filesystem)
             try:
+                clip_path.unlink(missing_ok=True)
                 os.link(cached_clip, clip_path)
             except OSError:
                 shutil.copy2(cached_clip, clip_path)

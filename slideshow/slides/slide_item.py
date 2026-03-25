@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import threading
 from pathlib import Path
 from PIL import Image
 from typing import Optional
@@ -16,6 +17,7 @@ class SlideItem(ABC):
         self._preview_image: Optional[Image.Image] = None
         self._rendered_clip: Optional[Path] = None
         self._is_portrait: Optional[bool] = None  # Cache for orientation check
+        self._image_lock = threading.Lock()  # Protects frame extraction
 
     def render(self, working_dir: Path, log_callback=None, progress_callback=None) -> Path:
         """
@@ -42,13 +44,17 @@ class SlideItem(ABC):
     def get_to_image(self):
         """Return the opening frame, caching it to avoid repeated extraction."""
         if self._to_image is None:
-            self._to_image = self._load_image(From=False)
+            with self._image_lock:
+                if self._to_image is None:
+                    self._to_image = self._load_image(From=False)
         return self._to_image
 
     def get_from_image(self):
         """Return the closing frame, caching it to avoid repeated extraction."""
         if self._from_image is None:
-            self._from_image = self._load_image(From=True)
+            with self._image_lock:
+                if self._from_image is None:
+                    self._from_image = self._load_image(From=True)
         return self._from_image
     
     def get_preview_image(self) -> Image.Image:
