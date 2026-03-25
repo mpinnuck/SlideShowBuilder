@@ -645,8 +645,10 @@ class GUI(tk.Tk):
                     except Exception as e:
                         self.log_message(f"Could not load config from {new_output_path}: {e}")
                 else:
-                    # New project - save current config
+                    # New project - reset intro_title to defaults before saving
                     self.log_message(f"Creating new project: {new_project_name}")
+                    from slideshow.config import DEFAULT_CONFIG
+                    self.config_data["intro_title"] = dict(DEFAULT_CONFIG["intro_title"])
                     self._auto_save_config()
             else:
                 # No path change, just save
@@ -1058,6 +1060,24 @@ class GUI(tk.Tk):
                           f"The input folder does not exist:\n{input_folder}\n\n"
                           "Please select a valid input folder.")
             return
+        
+        # Warn if intro title hasn't been configured
+        intro_config = self.config_data.get("intro_title", {})
+        intro_enabled = intro_config.get("enabled", False)
+        intro_text = intro_config.get("text", "").strip()
+        
+        if not intro_enabled:
+            proceed = wide_messagebox("question", "Intro Title Disabled",
+                "The intro title is currently disabled.\n\n"
+                "Do you want to continue exporting without an intro title?")
+            if not proceed:
+                return
+        elif not intro_text or intro_text == "Project Title\nHere":
+            proceed = wide_messagebox("question", "Intro Title Not Set",
+                "The intro title is enabled but the title text has not been set.\n\n"
+                "Do you want to continue exporting without a custom title?")
+            if not proceed:
+                return
         
         self.log_message("Starting video export...")
         self.reset_progress()

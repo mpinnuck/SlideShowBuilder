@@ -63,7 +63,7 @@ class Config:
         "video_quality": "maximum",
         "intro_title": {
             "enabled": False,
-            "text": "Project Title\nHere",
+            "text": "",
             "duration": 5.0,
             "font_path": "",  # Empty = use default_font_path from app settings
             "font_size": 120,
