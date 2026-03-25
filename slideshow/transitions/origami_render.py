@@ -91,54 +91,71 @@ def ease_out_back(t):
 
 def generate_full_screen_mesh_x(segments=20, x_min=-1.0, x_max=1.0):
     """Generate vertices/indices for a mesh spanning x_min..x_max in NDC (for horizontal folds)."""
-    vertices, tex_coords, indices = [], [], []
     x_start = int((x_min + 1) / 2 * segments)
     x_end = int((x_max + 1) / 2 * segments)
-    for y in range(segments + 1):
-        for x in range(x_start, x_end + 1):
-            u = x / segments
-            v = y / segments
-            vertices.extend([(u - 0.5) * 2.0, (v - 0.5) * 2.0, 0.0])
-            tex_coords.extend([u, 1.0 - v])
     row_vertices = x_end - x_start + 1
-    for y in range(segments):
-        for x in range(row_vertices - 1):
-            tl = y * row_vertices + x
-            tr = tl + 1
-            bl = (y + 1) * row_vertices + x
-            br = bl + 1
-            indices.extend([tl, bl, tr, tr, bl, br])
-    return (np.array(vertices, np.float32),
-            np.array(tex_coords, np.float32),
-            np.array(indices, np.uint32))
+
+    xs = np.linspace(x_start, x_end, row_vertices) / segments  # u values
+    ys = np.linspace(0, segments, segments + 1) / segments      # v values
+
+    # Build grid of (u, v) pairs
+    uu, vv = np.meshgrid(xs, ys)  # shape (segments+1, row_vertices)
+    pos_x = (uu - 0.5) * 2.0
+    pos_y = (vv - 0.5) * 2.0
+    pos_z = np.zeros_like(pos_x)
+    tex_u = uu
+    tex_v = 1.0 - vv
+
+    vertices = np.stack([pos_x, pos_y, pos_z], axis=-1).reshape(-1).astype(np.float32)
+    tex_coords = np.stack([tex_u, tex_v], axis=-1).reshape(-1).astype(np.float32)
+
+    # Build quad indices
+    rows, cols = segments + 1, row_vertices
+    r = np.arange(segments)
+    c = np.arange(cols - 1)
+    rr, cc = np.meshgrid(r, c, indexing='ij')
+    tl = (rr * cols + cc).ravel()
+    tr = tl + 1
+    bl = tl + cols
+    br = bl + 1
+    indices = np.stack([tl, bl, tr, tr, bl, br], axis=-1).ravel().astype(np.uint32)
+
+    return vertices, tex_coords, indices
 
 def generate_full_screen_mesh_y(segments=20, y_min=-1.0, y_max=1.0):
     """
     Generate vertices/indices for a mesh spanning y_min..y_max in NDC (for vertical folds).
     This is the vertical equivalent of generate_full_screen_mesh_x (x-based).
     """
-    vertices, tex_coords, indices = [], [], []
     y_start = int((y_min + 1) / 2 * segments)
     y_end = int((y_max + 1) / 2 * segments)
-
-    for y in range(y_start, y_end + 1):
-        for x in range(segments + 1):
-            u = x / segments
-            v = y / segments
-            vertices.extend([(u - 0.5) * 2.0, (v - 0.5) * 2.0, 0.0])
-            tex_coords.extend([u, 1.0 - v])
     row_vertices = segments + 1
     rows = y_end - y_start + 1
-    for y in range(rows - 1):
-        for x in range(segments):
-            tl = y * row_vertices + x
-            tr = tl + 1
-            bl = (y + 1) * row_vertices + x
-            br = bl + 1
-            indices.extend([tl, bl, tr, tr, bl, br])
-    return (np.array(vertices, np.float32),
-            np.array(tex_coords, np.float32),
-            np.array(indices, np.uint32))
+
+    xs = np.linspace(0, segments, row_vertices) / segments  # u values
+    ys = np.linspace(y_start, y_end, rows) / segments       # v values
+
+    uu, vv = np.meshgrid(xs, ys)  # shape (rows, row_vertices)
+    pos_x = (uu - 0.5) * 2.0
+    pos_y = (vv - 0.5) * 2.0
+    pos_z = np.zeros_like(pos_x)
+    tex_u = uu
+    tex_v = 1.0 - vv
+
+    vertices = np.stack([pos_x, pos_y, pos_z], axis=-1).reshape(-1).astype(np.float32)
+    tex_coords = np.stack([tex_u, tex_v], axis=-1).reshape(-1).astype(np.float32)
+
+    # Build quad indices
+    r = np.arange(rows - 1)
+    c = np.arange(segments)
+    rr, cc = np.meshgrid(r, c, indexing='ij')
+    tl = (rr * row_vertices + cc).ravel()
+    tr = tl + 1
+    bl = tl + row_vertices
+    br = bl + 1
+    indices = np.stack([tl, bl, tr, tr, bl, br], axis=-1).ravel().astype(np.uint32)
+
+    return vertices, tex_coords, indices
 
 
 # ---------- RENDERING UTILITIES ----------

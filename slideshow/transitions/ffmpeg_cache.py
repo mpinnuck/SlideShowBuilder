@@ -136,10 +136,15 @@ class FFmpegCache:
         """Generate a unique cache key based on input file and parameters."""
         # Use filename, size, and modification time for file identity
         # This ensures cache is invalidated if the file is modified or replaced
+        try:
+            st = input_path.stat()
+            size, mtime = st.st_size, st.st_mtime
+        except OSError:
+            size, mtime = 0, 0
         file_stats = {
             "name": input_path.name,
-            "size": input_path.stat().st_size if input_path.exists() else 0,
-            "mtime": input_path.stat().st_mtime if input_path.exists() else 0
+            "size": size,
+            "mtime": mtime,
         }
         
         # Combine file stats with processing parameters
@@ -202,14 +207,15 @@ class FFmpegCache:
             # Copy the output file to cache
             shutil.copy2(output_path, cached_file)
             
-            # Update metadata
+            # Stat once and reuse for all metadata fields
+            st = cached_file.stat()
             cls._metadata["entries"][cache_key] = {
                 "type": "clip",
                 "input_path": str(input_path),
                 "params": params,
-                "created": cached_file.stat().st_mtime,
-                "last_accessed": cached_file.stat().st_mtime,
-                "size": cached_file.stat().st_size
+                "created": st.st_mtime,
+                "last_accessed": st.st_mtime,
+                "size": st.st_size
             }
             cls._save_metadata()
             
@@ -270,14 +276,15 @@ class FFmpegCache:
             # Copy the output file to cache
             shutil.copy2(output_path, cached_file)
             
-            # Update metadata
+            # Stat once and reuse for all metadata fields
+            st = cached_file.stat()
             cls._metadata["entries"][cache_key] = {
                 "type": "frame",
                 "input_path": str(input_path),
                 "params": params,
-                "created": cached_file.stat().st_mtime,
-                "last_accessed": cached_file.stat().st_mtime,
-                "size": cached_file.stat().st_size
+                "created": st.st_mtime,
+                "last_accessed": st.st_mtime,
+                "size": st.st_size
             }
             cls._save_metadata()
             
