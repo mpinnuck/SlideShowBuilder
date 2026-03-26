@@ -327,6 +327,7 @@ class Slideshow:
         
         # Check if we should sort by filename instead of date
         sort_by_filename = self.config.get("sort_by_filename", False)
+        timestamp_cache = {}
         
         if sort_by_filename:
             # Sort alphabetically by filename (no EXIF extraction needed)
@@ -336,7 +337,6 @@ class Slideshow:
         else:
             # Sort with cached timestamps (progress shown during EXIF extraction)
             self._log(f"[Slideshow] Sorting {total_files} files by date taken...")
-            timestamp_cache = {}
             files_processed = [0]  # Use list to allow modification in nested function
             
             def get_file_timestamp(path: Path) -> float:
@@ -635,7 +635,7 @@ class Slideshow:
                         raise RuntimeError("Export cancelled by user")
                     future.result()  # re-raise any exception
                     completed += 1
-                    self._log(f"[Slideshow] Rendering slides ({completed}/{total_items})...{'\r' if completed < total_items else '\n'}")
+                    self._log(f"[Slideshow] Rendering slides ({completed}/{total_items})...\r")
                     if self.progress_callback:
                         self.progress_callback(completed, total_weighted_steps)
 
@@ -652,7 +652,6 @@ class Slideshow:
 
 
             # --- Render transitions (parallel — each is independent, slides are read-only) ---
-            self._log("")  # Newline before transition rendering
             transition_clips = [None] * (total_items - 1)  # Pre-allocate ordered list
             completed_trans = 0
 
@@ -671,7 +670,7 @@ class Slideshow:
                     idx, trans_out = future.result()
                     transition_clips[idx] = trans_out
                     completed_trans += 1
-                    self._log(f"[Slideshow] Rendering transitions ({completed_trans}/{total_transitions})...{'\r' if completed_trans < total_transitions else '\n'}")
+                    self._log(f"[Slideshow] Rendering transitions ({completed_trans}/{total_transitions})...\r")
                     if self.progress_callback:
                         self.progress_callback(total_items + completed_trans, total_weighted_steps)
 
