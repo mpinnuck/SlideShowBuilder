@@ -122,6 +122,7 @@ class ImageRotatorDialog:
         ttk.Button(self.rotation_frame, text="↷ 90° Right", command=lambda: self._rotate(90)).pack(side=tk.LEFT, padx=5)
         ttk.Button(self.rotation_frame, text="↻ 180°", command=lambda: self._rotate(180)).pack(side=tk.LEFT, padx=5)
         ttk.Button(self.rotation_frame, text="🗑 Delete", command=self._delete_image).pack(side=tk.LEFT, padx=(20, 5))
+        ttk.Button(self.rotation_frame, text="View EXIF", command=self._view_exif).pack(side=tk.LEFT, padx=(20, 5))
         
         self.rotation_label = ttk.Label(self.rotation_frame, text="", font=("TkDefaultFont", 10))
         self.rotation_label.pack(side=tk.LEFT, padx=20)
@@ -490,6 +491,40 @@ class ImageRotatorDialog:
                 self.parent.log_message(f"Error deleting image {filename}: {e}")
                 wide_messagebox("error", "Error", f"Failed to delete image: {e}")
     
+    def _get_current_image_path(self):
+        """Get the file path of the currently displayed image"""
+        if not self.slides:
+            return None
+        slide = self.slides[self.current_index]
+        from slideshow.slides.photo_slide import PhotoSlide
+        from slideshow.slides.multi_slide import MultiSlide
+        from slideshow.slides.video_slide import VideoSlide
+
+        if isinstance(slide, VideoSlide):
+            return None
+        if isinstance(slide, MultiSlide):
+            component_index = self.multi_image_var.get()
+            return slide.media_files[component_index]
+        if isinstance(slide, PhotoSlide):
+            return slide.path
+        return None
+
+    def _view_exif(self):
+        """Toggle EXIF data popup for the current image"""
+        # If already open, close it
+        if hasattr(self, '_exif_dialog') and self._exif_dialog and self._exif_dialog.is_open():
+            self._exif_dialog.close()
+            self._exif_dialog = None
+            return
+
+        image_path = self._get_current_image_path()
+        if image_path is None:
+            wide_messagebox("info", "No EXIF", "EXIF data is not available for this slide type.")
+            return
+
+        from slideshow.gui.exif_viewer import ExifViewerDialog
+        self._exif_dialog = ExifViewerDialog(self.dialog, image_path)
+
     def _save(self):
         """Images are already saved to disk - nothing to save"""
         self.parent.log_message("Image rotation changes have been saved to disk")
