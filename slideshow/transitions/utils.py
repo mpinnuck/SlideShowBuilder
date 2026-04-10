@@ -102,7 +102,8 @@ def extract_frame(video_path, last=False):
         # Store extracted frame in cache before returning
         FFmpegCache.store_frame(Path(video_path), cache_params, Path(tmp_path))
         
-        return Image.open(tmp_path).convert("RGB")
+        with Image.open(tmp_path) as img:
+            return img.convert("RGB")
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

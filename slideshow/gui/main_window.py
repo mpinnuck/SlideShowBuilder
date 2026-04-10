@@ -837,8 +837,8 @@ class GUI(tk.Tk):
                 cache_stats_before = FFmpegCache.get_cache_stats()
                 entries_before = cache_stats_before.get("total_entries", 0)
                 self.log_message(f"[Debug] Cache before clear: {entries_before} entries")
-            except:
-                pass
+            except Exception as e:
+                self.log_message(f"[Debug] Could not get cache stats: {e}")
             
             # Clear cache BEFORE saving config
             try:
@@ -1659,17 +1659,17 @@ class GUI(tk.Tk):
                     
                     if ext in ('.jpg', '.jpeg', '.heic', '.heif') and not older_images_no_exif:
                         try:
-                            img = Image.open(path)
-                            exif_data = img._getexif()
-                            if exif_data:
-                                for tag_id, value in exif_data.items():
-                                    tag = TAGS.get(tag_id, tag_id)
-                                    if tag == 'DateTimeOriginal':
-                                        date_obj = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                                        timestamp = date_obj.timestamp()
-                                        break
+                            with Image.open(path) as img:
+                                exif_data = img._getexif()
+                                if exif_data:
+                                    for tag_id, value in exif_data.items():
+                                        tag = TAGS.get(tag_id, tag_id)
+                                        if tag == 'DateTimeOriginal':
+                                            date_obj = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+                                            timestamp = date_obj.timestamp()
+                                            break
                         except Exception:
-                            pass
+                            pass  # Use file creation/modification time fallback
                     
                     timestamp_cache[path] = timestamp
                     return timestamp

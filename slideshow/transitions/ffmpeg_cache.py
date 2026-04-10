@@ -58,47 +58,55 @@ class FFmpegCache:
         """
         cache_dir = Path(cache_dir)
         
-        # If already configured with same directory, skip re-initialization
-        if cls._initialized and cls._cache_dir == cache_dir:
-            return
-        
-        # If reconfiguring with a different directory, reset state
-        if cls._cache_dir != cache_dir:
-            cls._cache_dir = cache_dir
-            cls._initialized = False
-            cls._metadata = {}
-        
-        try:
-            cls._cache_dir.mkdir(parents=True, exist_ok=True)
+        with cls._lock:
+            # If already configured with same directory, skip re-initialization
+            if cls._initialized and cls._cache_dir == cache_dir:
+                return
             
-            # Create subdirectories
-            (cls._cache_dir / "clips").mkdir(exist_ok=True)
-            (cls._cache_dir / "frames").mkdir(exist_ok=True)
-            (cls._cache_dir / "temp").mkdir(exist_ok=True)
-        except (OSError, PermissionError) as e:
-            # If we can't create the cache directory, disable caching
-            print(f"[FFmpegCache] Warning: Could not create cache directory: {e}")
-            cls._enabled = False
-            cls._initialized = True  # Mark as "initialized" even if failed to prevent retries
-            return
-        
-        # Load or create metadata
-        metadata_file = cls._cache_dir / "metadata.json"
-        if metadata_file.exists():
+            # If reconfiguring with a different directory, reset state
+            if cls._cache_dir != cache_dir:
+                cls._cache_dir = cache_dir
+                cls._initialized = False
+                cls._metadata = {}
+            
             try:
-                with open(metadata_file, 'r') as f:
-                    cls._metadata = json.load(f)
-            except (json.JSONDecodeError, IOError):
+                cls._cache_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Create subdirectories
+                (cls._cache_dir / "clips").mkdir(exist_ok=True)
+                (cls._cache_dir / "frames").mkdir(exist_ok=True)
+                (cls._cache_dir / "temp").mkdir(exist_ok=True)
+            except (OSError, PermissionError) as e:
+                # If we can't create the cache directory, disable caching
+                print(f"[FFmpegCache] Warning: Could not create cache directory: {e}")
+                cls._enabled = False
+                cls._initialized = True  # Mark as "initialized" even if failed to prevent retries
+                return
+            
+            # Load or create metadata
+            metadata_file = cls._cache_dir / "metadata.json"
+            if metadata_file.exists():
+                try:
+                    with open(metadata_file, 'r') as f:
+                        cls._metadata = json.load(f)
+                except (json.JSONDecodeError, IOError):
+                    # Backup corrupted file before resetting
+                    try:
+                        backup = metadata_file.with_suffix('.json.bak')
+                        metadata_file.rename(backup)
+                        print(f"[FFmpegCache] Backed up corrupted metadata to {backup}")
+                    except OSError:
+                        pass
+                    cls._metadata = {"version": "1.0", "entries": {}, "stats": {"hits": 0, "misses": 0}}
+            else:
                 cls._metadata = {"version": "1.0", "entries": {}, "stats": {"hits": 0, "misses": 0}}
-        else:
-            cls._metadata = {"version": "1.0", "entries": {}, "stats": {"hits": 0, "misses": 0}}
-        
-        # Ensure stats section exists for older cache files
-        if "stats" not in cls._metadata:
-            cls._metadata["stats"] = {"hits": 0, "misses": 0}
-        
-        cls._initialized = True
-        cls._enabled = True
+            
+            # Ensure stats section exists for older cache files
+            if "stats" not in cls._metadata:
+                cls._metadata["stats"] = {"hits": 0, "misses": 0}
+            
+            cls._initialized = True
+            cls._enabled = True
     
     @classmethod
     def auto_configure(cls):
@@ -192,7 +200,10 @@ class FFmpegCache:
             stats["hits"] = stats.get("hits", 0) + 1
             
             # Update access time for the entry
-            cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
+            try:
+                cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
+            except OSError:
+                pass
             cls._save_metadata()
             
             return cached_file
@@ -264,7 +275,10 @@ class FFmpegCache:
             stats["hits"] = stats.get("hits", 0) + 1
             
             # Update access time for the entry
-            cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
+            try:
+                cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
+            except OSError:
+                pass
             cls._save_metadata()
             
             return cached_file

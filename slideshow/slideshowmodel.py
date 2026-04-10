@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -548,6 +549,13 @@ class Slideshow:
         """
 #        self._log(f"[Slideshow] Running ffmpeg:\n{' '.join(cmd)}")
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        # Drain stderr in a background thread to prevent pipe buffer deadlock
+        stderr_lines = []
+        stderr_thread = threading.Thread(
+            target=lambda: stderr_lines.extend(proc.stderr.readlines()),
+            daemon=True
+        )
+        stderr_thread.start()
         last_report = -1
         try:
             while True:
@@ -583,8 +591,9 @@ class Slideshow:
                     proc.kill()
 
         proc.wait()
+        stderr_thread.join(timeout=5)
         if proc.returncode != 0:
-            stderr_out = proc.stderr.read() if proc.stderr else ""
+            stderr_out = "".join(stderr_lines)
             raise subprocess.CalledProcessError(proc.returncode, cmd, stderr_out)
 
     def set_transition_type(self, transition_type: str):

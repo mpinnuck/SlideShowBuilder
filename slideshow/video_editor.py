@@ -187,17 +187,28 @@ class VideoEditor:
         # Calculate expected duration for progress estimation
         expected_duration = sum(seg.duration for seg in segments_to_keep)
         
-        for line in process.stdout:
-            if progress_callback and "out_time_ms=" in line:
-                # Parse current time from FFmpeg progress
-                match = re.search(r'out_time_ms=(\d+)', line)
-                if match:
-                    current_time_ms = int(match.group(1))
-                    current_time = current_time_ms / 1000000.0  # Convert microseconds to seconds
-                    progress_pct = min(int((current_time / expected_duration) * 70) + 5, 75)  # 5-75%
-                    progress_callback(progress_pct, f"Processing video ({current_time:.1f}s / {expected_duration:.1f}s)...")
+        try:
+            for line in process.stdout:
+                if progress_callback and "out_time_ms=" in line:
+                    # Parse current time from FFmpeg progress
+                    match = re.search(r'out_time_ms=(\d+)', line)
+                    if match:
+                        current_time_ms = int(match.group(1))
+                        current_time = current_time_ms / 1000000.0  # Convert microseconds to seconds
+                        progress_pct = min(int((current_time / expected_duration) * 70) + 5, 75)  # 5-75%
+                        progress_callback(progress_pct, f"Processing video ({current_time:.1f}s / {expected_duration:.1f}s)...")
+            
+            process.wait()
+        except Exception:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            raise
         
-        process.wait()
         if process.returncode != 0:
             return False
         
@@ -206,27 +217,30 @@ class VideoEditor:
         
         # Extract video only (no audio) and add back looped soundtrack
         temp_video_no_audio = output_path.parent / "temp_video_no_audio.mp4"
-        cmd_no_audio = [
-            FFmpegPaths.ffmpeg(), "-y",
-            "-i", str(temp_video_only),
-            "-an",  # Remove audio
-            "-c:v", "copy",  # Copy video stream
-            str(temp_video_no_audio)
-        ]
-        subprocess.run(cmd_no_audio, capture_output=True, check=True)
-        
-        if progress_callback:
-            progress_callback(80, "Adding soundtrack with fade...")
-        
-        # Add back the original soundtrack, looped/trimmed to match new duration
-        new_duration = sum(seg.duration for seg in segments_to_keep)
-        self._add_soundtrack_to_video(temp_video_no_audio, output_path, new_duration)
-        
-        # Cleanup
-        if temp_video_only.exists():
-            temp_video_only.unlink()
-        if temp_video_no_audio.exists():
-            temp_video_no_audio.unlink()
+        try:
+            cmd_no_audio = [
+                FFmpegPaths.ffmpeg(), "-y",
+                "-i", str(temp_video_only),
+                "-an",  # Remove audio
+                "-c:v", "copy",  # Copy video stream
+                str(temp_video_no_audio)
+            ]
+            subprocess.run(cmd_no_audio, capture_output=True, check=True)
+            
+            if progress_callback:
+                progress_callback(80, "Adding soundtrack with fade...")
+            
+            # Add back the original soundtrack, looped/trimmed to match new duration
+            new_duration = sum(seg.duration for seg in segments_to_keep)
+            self._add_soundtrack_to_video(temp_video_no_audio, output_path, new_duration)
+        finally:
+            # Cleanup temp files even if an error occurs
+            for temp_file in (temp_video_only, temp_video_no_audio):
+                try:
+                    if temp_file.exists():
+                        temp_file.unlink()
+                except OSError:
+                    pass
         
         return True
     

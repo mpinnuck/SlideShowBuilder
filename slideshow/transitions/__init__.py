@@ -56,6 +56,7 @@ def list_available_transitions():
                 })
         except Exception:
             # Skip transitions that can't be instantiated
+            print(f"[Transitions] Warning: Could not check availability of {name}")
             pass
     
     return available

@@ -178,7 +178,7 @@ class IntroTitle:
         print(f"Warning: Could not load any specified fonts, using default")
         try:
             return ImageFont.load_default()
-        except:
+        except Exception:
             # Create a very basic font as absolute last resort  
             return ImageFont.load_default()
 

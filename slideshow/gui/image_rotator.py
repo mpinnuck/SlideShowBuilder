@@ -268,10 +268,11 @@ class ImageRotatorDialog:
         self.date_label.config(text=f"Image {component_index + 1} of {len(slide.media_files)}")
         
         try:
-            img = Image.open(image_path)
-            img = ImageOps.exif_transpose(img)
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
+            with Image.open(image_path) as img:
+                img = ImageOps.exif_transpose(img)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                img = img.copy()
             
             canvas_width = self.canvas.winfo_width() or 1000
             canvas_height = self.canvas.winfo_height() or 600

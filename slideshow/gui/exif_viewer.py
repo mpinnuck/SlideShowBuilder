@@ -14,8 +14,8 @@ class ExifViewerDialog:
         self.popup = None
 
         try:
-            img = Image.open(image_path)
-            exif_data = img._getexif()
+            with Image.open(image_path) as img:
+                exif_data = img._getexif()
         except Exception:
             exif_data = None
 

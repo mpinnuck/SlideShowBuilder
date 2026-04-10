@@ -117,7 +117,7 @@ class VideoSlide(SlideItem):
                     return height > width
             
         except Exception:
-            pass
+            pass  # Fallback: assume landscape if we can't determine orientation
         
         # Fallback: assume landscape if we can't determine orientation
         return False

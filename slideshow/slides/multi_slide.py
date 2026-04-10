@@ -96,16 +96,15 @@ class MultiSlide(SlideItem):
         
         try:
             # Load the image from disk
-            img = Image.open(image_path)
-            
-            # Preserve EXIF data
-            exif_data = img.info.get('exif', b'')
-            
-            # Apply EXIF orientation first
-            img = ImageOps.exif_transpose(img)
-            
-            # Rotate the image
-            img_rotated = img.rotate(degrees, expand=True)
+            with Image.open(image_path) as img:
+                # Preserve EXIF data
+                exif_data = img.info.get('exif', b'')
+                
+                # Apply EXIF orientation first
+                img = ImageOps.exif_transpose(img)
+                
+                # Rotate the image
+                img_rotated = img.rotate(degrees, expand=True)
             
             # Save back to the same file
             if exif_data:
@@ -133,11 +132,11 @@ class MultiSlide(SlideItem):
         if len(self.media_files) > 0:
             main_file = self.media_files[0]
             if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
-                img = Image.open(main_file)
-                img = ImageOps.exif_transpose(img)
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                return img
+                with Image.open(main_file) as img:
+                    img = ImageOps.exif_transpose(img)
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    return img.copy()
             elif main_file.suffix.lower() in ['.mp4', '.mov']:
                 from slideshow.transitions.utils import extract_frame
                 return extract_frame(main_file, last=False)
@@ -172,7 +171,7 @@ class MultiSlide(SlideItem):
                             width, height = map(int, dimensions.split('x'))
                             return height > width
         except Exception:
-            pass
+            pass  # Fallback: assume landscape
         
         # Fallback: assume landscape
         return False
@@ -185,14 +184,13 @@ class MultiSlide(SlideItem):
             file_path = self.media_files[j]
             # Only load image files
             if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
-                img = Image.open(file_path)
-                # Apply EXIF orientation to display correctly
-                img = ImageOps.exif_transpose(img)
-                # Convert to RGB if needed
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                images.append(img)
+                with Image.open(file_path) as img:
+                    # Apply EXIF orientation to display correctly
+                    img = ImageOps.exif_transpose(img)
+                    # Convert to RGB if needed
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    images.append(img.copy())
         
         if len(images) < 3:
             raise ValueError("MultiSlide requires at least 3 image files")
@@ -402,10 +400,10 @@ class MultiSlide(SlideItem):
                 for frame_num in range(total_frames):
                     frame_path = video_temp_dir / f"frame_{frame_num:04d}.png"
                     if frame_path.exists():
-                        img = Image.open(frame_path)
-                        if img.mode != 'RGB':
-                            img = img.convert('RGB')
-                        frames_dict[frame_num] = img
+                        with Image.open(frame_path) as img:
+                            if img.mode != 'RGB':
+                                img = img.convert('RGB')
+                            frames_dict[frame_num] = img.copy()
                     else:
                         # Frame missing, use black
                         frames_dict[frame_num] = Image.new('RGB', (1920, 1080), (0, 0, 0))
@@ -536,16 +534,16 @@ class MultiSlide(SlideItem):
                 if path.suffix.lower() == '.heic':
                     temp_jpg = working_dir / f"temp_heic_{path.stem}_{param_hash}.jpg"
                     temp_heic_files.append(temp_jpg)
-                    img = Image.open(path)
-                    img = ImageOps.exif_transpose(img)
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    # Resize to reasonable size for faster processing (FFmpeg will scale anyway)
-                    # Max dimension 2048 is plenty for compositing
-                    if max(img.size) > 2048:
-                        img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
-                    # Save as JPEG with quality 85 (much faster than PNG, still good quality)
-                    img.save(temp_jpg, 'JPEG', quality=85, optimize=False)
+                    with Image.open(path) as img:
+                        img = ImageOps.exif_transpose(img)
+                        if img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        # Resize to reasonable size for faster processing (FFmpeg will scale anyway)
+                        # Max dimension 2048 is plenty for compositing
+                        if max(img.size) > 2048:
+                            img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+                        # Save as JPEG with quality 85 (much faster than PNG, still good quality)
+                        img.save(temp_jpg, 'JPEG', quality=85, optimize=False)
                     input_paths.append(temp_jpg)
                 else:
                     input_paths.append(path)
@@ -630,14 +628,14 @@ class MultiSlide(SlideItem):
                     temp_heic_files.append(temp_jpg)
                     
                     # Convert HEIC to JPEG using PIL (faster than PNG)
-                    img = Image.open(path)
-                    img = ImageOps.exif_transpose(img)
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    # Resize to reasonable size for faster processing
-                    if max(img.size) > 2048:
-                        img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
-                    img.save(temp_jpg, 'JPEG', quality=85, optimize=False)
+                    with Image.open(path) as img:
+                        img = ImageOps.exif_transpose(img)
+                        if img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        # Resize to reasonable size for faster processing
+                        if max(img.size) > 2048:
+                            img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+                        img.save(temp_jpg, 'JPEG', quality=85, optimize=False)
                     input_path = temp_jpg
                 
                 if input_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
