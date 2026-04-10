@@ -131,7 +131,7 @@ class MultiSlide(SlideItem):
         # Return main image (first file)
         if len(self.media_files) > 0:
             main_file = self.media_files[0]
-            if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
+            if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic', '.heif']:
                 with Image.open(main_file) as img:
                     img = ImageOps.exif_transpose(img)
                     if img.mode != 'RGB':
@@ -150,7 +150,7 @@ class MultiSlide(SlideItem):
         try:
             if len(self.media_files) > 0:
                 main_file = self.media_files[0]
-                if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
+                if main_file.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic', '.heif']:
                     with Image.open(main_file) as img:
                         # Apply EXIF orientation to get correct dimensions
                         img = ImageOps.exif_transpose(img)
@@ -183,7 +183,7 @@ class MultiSlide(SlideItem):
         for j in range(len(self.media_files)):
             file_path = self.media_files[j]
             # Only load image files
-            if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
+            if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic', '.heif']:
                 with Image.open(file_path) as img:
                     # Apply EXIF orientation to display correctly
                     img = ImageOps.exif_transpose(img)
@@ -519,7 +519,7 @@ class MultiSlide(SlideItem):
             log_callback(f"[MultiSlide] Using FFmpeg complex filter for fast compositing...")
         
         # Check if all inputs are static images (no video) - we can optimize this case
-        all_static = all(path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic'] 
+        all_static = all(path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.heic', '.heif'] 
                         for path in media_paths)
         
         if all_static:
@@ -531,7 +531,7 @@ class MultiSlide(SlideItem):
             temp_heic_files = []
             input_paths = []
             for path in media_paths:
-                if path.suffix.lower() == '.heic':
+                if path.suffix.lower() in ('.heic', '.heif'):
                     temp_jpg = working_dir / f"temp_heic_{path.stem}_{param_hash}.jpg"
                     temp_heic_files.append(temp_jpg)
                     with Image.open(path) as img:
@@ -623,7 +623,7 @@ class MultiSlide(SlideItem):
                 
                 # Handle HEIC files - convert to temp JPEG first (faster than PNG)
                 input_path = path
-                if path.suffix.lower() == '.heic':
+                if path.suffix.lower() in ('.heic', '.heif'):
                     temp_jpg = working_dir / f"temp_heic_{i}_{param_hash}.jpg"
                     temp_heic_files.append(temp_jpg)
                     

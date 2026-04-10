@@ -1592,7 +1592,7 @@ class GUI(tk.Tk):
         older_images_no_exif = self.config_data.get("older_images_no_exif", False)
         
         # Find all image files (same extensions as preview supports)
-        supported_image_extensions = {'.jpg', '.jpeg', '.png', '.heic'}
+        supported_image_extensions = {'.jpg', '.jpeg', '.png', '.heic', '.heif'}
         image_files = []
         
         # Show a loading dialog

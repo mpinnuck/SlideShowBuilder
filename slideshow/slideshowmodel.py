@@ -468,7 +468,7 @@ class Slideshow:
                 self.slides.append(multi_slide)
                 
                 # Count photos and videos consumed by the multislide
-                photos_in_multi = sum(1 for f in next_files if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".heic"))
+                photos_in_multi = sum(1 for f in next_files if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".heic", ".heif"))
                 videos_in_multi = sum(1 for f in next_files if f.suffix.lower() in (".mp4", ".mov"))
                 photo_count += photos_in_multi
                 video_count += videos_in_multi
@@ -479,7 +479,7 @@ class Slideshow:
                 continue
             
             # Process single file normally
-            if ext in (".jpg", ".jpeg", ".png", ".heic"):
+            if ext in (".jpg", ".jpeg", ".png", ".heic", ".heif"):
                 resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
                 fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
                 
