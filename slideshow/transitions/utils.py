@@ -72,6 +72,15 @@ def extract_frame(video_path, last=False):
                        "-vframes", "1", tmp_path]
                 result = subprocess.run(cmd, capture_output=True, timeout=30)
 
+            # If still failing, retry with error-tolerant flags for corrupt streams
+            if result.returncode != 0 or not (os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0):
+                cmd = [FFmpegPaths.ffmpeg(), "-y",
+                       "-err_detect", "ignore_err",
+                       "-fflags", "+discardcorrupt+genpts",
+                       "-i", str(video_path),
+                       "-vframes", "1", tmp_path]
+                result = subprocess.run(cmd, capture_output=True, timeout=30)
+
             ffmpeg_ok = result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0
         except subprocess.TimeoutExpired:
             pass

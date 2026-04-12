@@ -1,5 +1,6 @@
 # slideshow/slideshowmodel.py
 import datetime
+from collections import Counter
 import hashlib
 import json
 import os
@@ -159,7 +160,24 @@ class Slideshow:
                 json.dump(slide_data, f, indent=2)
         except Exception as e:
             self._log(f"[Slideshow] Warning: Could not save slide cache: {e}")
-    
+
+    def _log_input_file_counts(self):
+        """Log a breakdown of input file types from the loaded slides."""
+        try:
+            from slideshow.slides.multi_slide import MultiSlide
+            files = []
+            for slide in self.slides:
+                if isinstance(slide, MultiSlide):
+                    files.extend(slide.media_files)
+                else:
+                    files.append(slide.path)
+            counts = Counter(f.suffix.lower() for f in files)
+            total = sum(counts.values())
+            parts = ", ".join(f"{count} {ext.lstrip('.').upper()}" for ext, count in sorted(counts.items()) if count > 0)
+            self._log(f"[Slideshow] Input files: {parts} = {total} total")
+        except Exception as e:
+            self._log(f"[Slideshow] Could not count input file types: {e}")
+
     def _load_slide_cache(self) -> bool:
         """Try to load slides from cache. Returns True if successful."""
         try:
@@ -283,10 +301,12 @@ class Slideshow:
         cache_loaded = self._load_slide_cache()
         if cache_loaded:
             self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache")
-            # Final progress update
+            # Final progress update (must come before _log_input_file_counts, as the progress
+            # message uses \r which deletes the previous log line)
             if self.progress_callback:
                 total = len(self.slides)
                 self.progress_callback(total, total, f"Loaded {total} slides from cache")
+            self._log_input_file_counts()
             return
         
         # If cache failed to load, rebuild from scratch
@@ -321,7 +341,7 @@ class Slideshow:
             and f.name.lower() not in ignored_names
         ]
         total_files = len(all_files_list)
-        
+
         # Report progress for the scanning phase
         if self.progress_callback:
             self.progress_callback(0, total_files, f"Scanning {total_files} media files...")
@@ -522,7 +542,8 @@ class Slideshow:
         single_photo_slides = (photo_count - (multislide_count * 3))  # Photos not in MultiSlides
         
         self._log(f"[Slideshow] Importing {total_input_files} files → {total_slides} slides: {single_photo_slides} photo, {video_count} video, {multislide_count} multi")
-        
+        self._log_input_file_counts()
+
         # Save slide list to cache for faster loading next time
         self._save_slide_cache()
         
