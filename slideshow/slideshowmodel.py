@@ -463,7 +463,12 @@ class Slideshow:
             ext = path.suffix.lower()
             
             # Get timestamp for this file from cache
-            timestamp = timestamp_cache.get(path, path.stat().st_mtime)
+            timestamp = timestamp_cache.get(path)
+            if timestamp is None:
+                try:
+                    timestamp = path.stat().st_mtime
+                except OSError:
+                    timestamp = 0.0
             
             # Check if we should create a multislide at this position
             # Trigger: Every 5 slides (e.g., at indices 5, 10, 15, ...)

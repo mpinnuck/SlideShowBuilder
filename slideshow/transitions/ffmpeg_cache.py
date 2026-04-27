@@ -182,7 +182,6 @@ class FFmpegCache:
             if cache_key not in cls._metadata.get("entries", {}):
                 stats = cls._metadata.setdefault("stats", {})
                 stats["misses"] = stats.get("misses", 0) + 1
-                cls._save_metadata()
                 return None
                 
             # Check if cached file actually exists
@@ -204,7 +203,6 @@ class FFmpegCache:
                 cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
             except OSError:
                 pass
-            cls._save_metadata()
             
             return cached_file
     
@@ -257,7 +255,6 @@ class FFmpegCache:
             if cache_key not in cls._metadata.get("entries", {}):
                 stats = cls._metadata.setdefault("stats", {})
                 stats["misses"] = stats.get("misses", 0) + 1
-                cls._save_metadata()
                 return None
                 
             # Check if cached file actually exists
@@ -279,7 +276,6 @@ class FFmpegCache:
                 cls._metadata["entries"][cache_key]["last_accessed"] = cached_file.stat().st_mtime
             except OSError:
                 pass
-            cls._save_metadata()
             
             return cached_file
     
