@@ -336,57 +336,6 @@ class Slideshow:
         
         return video_metadata
 
-    def _extract_video_metadata_parallel(self, video_files: List[Path], files_processed: List[int], total_files: int) -> dict:
-        """Extract creation time metadata from video files in parallel using ffprobe."""
-        def extract_single_video_metadata(video_path: Path) -> tuple[Path, Optional[float]]:
-            """Extract metadata from a single video file."""
-            try:
-                result = subprocess.run([
-                    'ffprobe', '-v', 'quiet', '-print_format', 'json',
-                    '-show_format', str(video_path)
-                ], capture_output=True, text=True, timeout=10)
-                
-                if result.returncode == 0:
-                    metadata = json.loads(result.stdout)
-                    creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
-                    if creation_time:
-                        # Handle various ISO 8601 formats
-                        for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
-                            try:
-                                dt = datetime.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
-                                return video_path, dt.timestamp()
-                            except ValueError:
-                                continue
-                return video_path, None
-            except Exception:
-                return video_path, None
-        
-        video_metadata = {}
-        if not video_files:
-            return video_metadata
-        
-        # Process videos in parallel with limited concurrency to avoid overwhelming the system
-        max_workers = min(4, len(video_files))  # Limit to 4 concurrent ffprobe processes
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all video metadata extraction tasks
-            future_to_path = {executor.submit(extract_single_video_metadata, path): path for path in video_files}
-            
-            # Collect results as they complete
-            for future in as_completed(future_to_path):
-                path, timestamp = future.result()
-                if timestamp is not None:
-                    video_metadata[path] = timestamp
-                
-                # Update progress
-                files_processed[0] += 1
-                if files_processed[0] % 10 == 0 or files_processed[0] == total_files:
-                    if self.progress_callback:
-                        self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
-                    self._log(f"Reading dates {files_processed[0]}/{total_files}...\r")
-        
-        return video_metadata
-
-
     def get_estimated_duration(self, fudge: float = 1.1) -> float:
         total = sum(getattr(slide, "duration", 0) for slide in self.slides)
         if len(self.slides) > 1:
@@ -414,7 +363,6 @@ class Slideshow:
         # Try to load from cache first
         cache_loaded = self._load_slide_cache()
         if cache_loaded:
-            self._log(f"Loaded {len(self.slides)} slides from cache")
             # Final progress update (must come before _log_input_file_counts, as the progress
             # message uses \r which deletes the previous log line)
             if self.progress_callback:
@@ -817,7 +765,7 @@ class Slideshow:
                         self._log(f"Failed rendering slide: {failed_slide.path.name}")
                         raise
                     completed += 1
-                    print(f"\rRendering slides ({completed}/{total_items})...", end="", flush=True)
+                    self._log(f"Rendering slides ({completed}/{total_items})...\r")
                     if self.progress_callback:
                         if completed % 10 == 0 or completed == total_items:
                             self.progress_callback(
