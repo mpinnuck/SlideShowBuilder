@@ -164,7 +164,7 @@ class MultiSlide(SlideItem):
                         "-of", "csv=s=x:p=0",
                         str(main_file)
                     ]
-                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                     if result.returncode == 0 and result.stdout.strip():
                         dimensions = result.stdout.strip()
                         if 'x' in dimensions:
@@ -394,7 +394,7 @@ class MultiSlide(SlideItem):
         ]
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
             if result.returncode == 0:
                 # Load all extracted frames
                 for frame_num in range(total_frames):
@@ -592,7 +592,7 @@ class MultiSlide(SlideItem):
                 cmd.extend(cfg.get_ffmpeg_encoding_params())
                 cmd.append(str(clip_path))
                 
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg direct composite failed: {result.stderr}")
                 
@@ -653,7 +653,7 @@ class MultiSlide(SlideItem):
                         "-crf", "30",  # Lower quality = faster (this is just an intermediate)
                         str(temp_clip)
                     ]
-                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                     if result.returncode != 0:
                         raise RuntimeError(f"Failed to create video from image: {result.stderr}")
                         
@@ -692,7 +692,7 @@ class MultiSlide(SlideItem):
                             str(temp_clip)
                         ]
                     
-                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                     if result.returncode != 0:
                         raise RuntimeError(f"Failed to prepare video {path.name}: {result.stderr}")
             
@@ -756,7 +756,7 @@ class MultiSlide(SlideItem):
             if log_callback:
                 log_callback(f"[MultiSlide] Compositing with FFmpeg complex filter...")
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
             if result.returncode != 0:
                 raise RuntimeError(f"FFmpeg compositing failed: {result.stderr}")
             

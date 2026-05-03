@@ -86,7 +86,7 @@ class FadeTransition(BaseTransition):
             "-t", f"{self.duration:.3f}", str(output_path)
         ])
 
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
         if result.returncode != 0 or not output_path.exists():
             raise RuntimeError(
                 f"FadeTransition failed:\\nCommand: {' '.join(cmd)}\\nError:\\n{result.stderr}"

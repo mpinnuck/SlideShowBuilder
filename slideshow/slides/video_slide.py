@@ -79,7 +79,11 @@ class VideoSlide(SlideItem):
         if log_callback:
             log_callback(f"FFmpeg command: {' '.join(ffmpeg_cmd)}")
 
-        process = subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            process = subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"FFmpeg timeout (120s) rendering video slide: {self.path.name}. This may indicate a corrupted file, unsupported codec, or encoding issue.")
+            
         if process.returncode != 0:
             raise RuntimeError(f"FFmpeg failed for {self.path}:\n{process.stderr}")
 
@@ -109,7 +113,7 @@ class VideoSlide(SlideItem):
                 str(self.path)
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0 and result.stdout.strip():
                 dimensions = result.stdout.strip()
                 if 'x' in dimensions:

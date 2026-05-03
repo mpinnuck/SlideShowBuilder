@@ -736,8 +736,12 @@ class Slideshow:
             max_workers = 4 if hw_accel else 6
 
             def _render_slide(slide):
-                slide.render(self.working_dir)
-                return slide
+                try:
+                    slide.render(self.working_dir)
+                    return slide
+                except Exception as e:
+                    # Include slide information in error for debugging
+                    raise RuntimeError(f"Failed to render slide {slide.path.name}: {str(e)}") from e
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {executor.submit(_render_slide, s): s for s in self.slides}
@@ -746,7 +750,13 @@ class Slideshow:
                         executor.shutdown(wait=False, cancel_futures=True)
                         self._log("[Slideshow] Cancelling export...")
                         raise RuntimeError("Export cancelled by user")
-                    future.result()  # re-raise any exception
+                    try:
+                        future.result()  # re-raise any exception
+                    except Exception as e:
+                        # Get the slide that failed from the futures mapping
+                        failed_slide = futures[future]
+                        self._log(f"[Slideshow] Failed rendering slide {completed+1}/{total_items}: {failed_slide.path.name}")
+                        raise
                     completed += 1
                     self._log(f"[Slideshow] Rendering slides ({completed}/{total_items})...\r")
                     if self.progress_callback:

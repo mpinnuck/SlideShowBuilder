@@ -17,7 +17,7 @@ def get_video_info(video_path):
         "-of", "default=noprint_wrappers=1:nokey=1",
         str(video_path)
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed: {result.stderr}")
     width, height, fps_str = result.stdout.strip().split("\n")
@@ -34,7 +34,7 @@ def get_video_duration(video_path):
         "-of", "default=noprint_wrappers=1:nokey=1",
         str(video_path)
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed to get duration: {result.stderr}")
     duration_str = result.stdout.strip()
@@ -172,7 +172,7 @@ def save_frames_as_video(frames, output_path, fps=25):
             "-movflags", "+faststart",  # Optimize for streaming/concatenation
             str(output_path)
         ])
-        subprocess.run(cmd, check=True, capture_output=True)  # Suppress verbose output
+        subprocess.run(cmd, check=True, capture_output=True, timeout=120)  # Suppress verbose output
 
 
 def add_soundtrack_with_fade(video_only_path, output_path, soundtrack_path, duration, progress_callback=None):
@@ -282,5 +282,5 @@ def extract_audio_from_video(video_path, output_audio_path):
         str(output_audio_path)
     ]
     
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     return result.returncode == 0

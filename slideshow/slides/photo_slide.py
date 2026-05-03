@@ -124,7 +124,11 @@ class PhotoSlide(SlideItem):
             str(clip_path)
         ]
 
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        try:
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            temp_png.unlink(missing_ok=True)
+            raise RuntimeError(f"FFmpeg timeout (120s) rendering photo slide: {self.path.name}. This may indicate a corrupted file or encoding issue.")
 
         # Clean up temp file
         temp_png.unlink(missing_ok=True)
