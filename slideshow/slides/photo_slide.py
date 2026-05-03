@@ -12,6 +12,7 @@ from slideshow.slides.slide_item import SlideItem
 from slideshow.transitions.utils import load_and_resize_image
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
+from slideshow.error_handling import ErrorHandler
 
 
 class PhotoSlide(SlideItem):
@@ -54,9 +55,15 @@ class PhotoSlide(SlideItem):
             try:
                 clip_path.unlink(missing_ok=True)
                 os.link(cached_clip, clip_path)
-            except OSError:
+            except OSError as e:
+                # Hard link failed, fall back to copy
+                print(f"[PhotoSlide] Hard link failed for {self.path.name}, copying instead: {e}")
                 import shutil
-                shutil.copy2(cached_clip, clip_path)
+                try:
+                    shutil.copy2(cached_clip, clip_path)
+                except OSError as copy_error:
+                    ErrorHandler.log_error(print, f"File copy operation for {self.path.name}", copy_error)
+                    raise
             return clip_path
 
         # Load image - use PIL for HEIC support, then convert to OpenCV format

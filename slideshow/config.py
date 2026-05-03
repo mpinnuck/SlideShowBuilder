@@ -100,6 +100,157 @@ class Config:
         }
     }
     
+    # =================================================================
+    # Input Validation Methods
+    # =================================================================
+    
+    @staticmethod
+    def _validate_fps(fps) -> int:
+        """Validate frames per second parameter.
+        
+        Args:
+            fps: FPS value to validate (int, float, or string)
+            
+        Returns:
+            Valid integer FPS value
+            
+        Raises:
+            ValueError: If FPS is invalid
+        """
+        try:
+            fps_int = int(fps)
+        except (ValueError, TypeError):
+            raise ValueError(f"FPS must be a number, got: {fps} ({type(fps)})")
+        
+        if fps_int < 1:
+            raise ValueError(f"FPS must be positive, got: {fps_int}")
+        if fps_int > 120:
+            raise ValueError(f"FPS too high (max 120), got: {fps_int}")
+            
+        return fps_int
+    
+    @staticmethod
+    def _validate_duration(duration, param_name: str) -> float:
+        """Validate duration parameter.
+        
+        Args:
+            duration: Duration value to validate (float, int, or string)
+            param_name: Name of the parameter for error messages
+            
+        Returns:
+            Valid float duration value
+            
+        Raises:
+            ValueError: If duration is invalid
+        """
+        try:
+            duration_float = float(duration)
+        except (ValueError, TypeError):
+            raise ValueError(f"{param_name} must be a number, got: {duration} ({type(duration)})")
+        
+        if duration_float <= 0:
+            raise ValueError(f"{param_name} must be positive, got: {duration_float}")
+        if duration_float > 3600:  # 1 hour max
+            raise ValueError(f"{param_name} too long (max 3600s), got: {duration_float}")
+            
+        return duration_float
+    
+    @staticmethod
+    def _validate_resolution(resolution) -> list:
+        """Validate resolution parameter.
+        
+        Args:
+            resolution: Resolution to validate (list/tuple of 2 integers)
+            
+        Returns:
+            Valid resolution list [width, height]
+            
+        Raises:
+            ValueError: If resolution is invalid
+        """
+        if not isinstance(resolution, (list, tuple)) or len(resolution) != 2:
+            raise ValueError(f"Resolution must be [width, height], got: {resolution}")
+            
+        try:
+            width, height = int(resolution[0]), int(resolution[1])
+        except (ValueError, TypeError):
+            raise ValueError(f"Resolution dimensions must be integers, got: {resolution}")
+        
+        if width < 64 or height < 64:
+            raise ValueError(f"Resolution too small (min 64x64), got: {width}x{height}")
+        if width > 7680 or height > 4320:  # 8K max
+            raise ValueError(f"Resolution too large (max 7680x4320), got: {width}x{height}")
+        if width % 2 != 0 or height % 2 != 0:
+            raise ValueError(f"Resolution must be even numbers (FFmpeg requirement), got: {width}x{height}")
+            
+        return [width, height]
+    
+    @staticmethod
+    def _validate_font_size(font_size) -> int:
+        """Validate font size parameter.
+        
+        Args:
+            font_size: Font size to validate (int, float, or string)
+            
+        Returns:
+            Valid integer font size
+            
+        Raises:
+            ValueError: If font size is invalid
+        """
+        try:
+            size_int = int(font_size)
+        except (ValueError, TypeError):
+            raise ValueError(f"Font size must be a number, got: {font_size} ({type(font_size)})")
+        
+        if size_int < 8:
+            raise ValueError(f"Font size too small (min 8), got: {size_int}")
+        if size_int > 1000:
+            raise ValueError(f"Font size too large (max 1000), got: {size_int}")
+            
+        return size_int
+    
+    def _validate_config_dict(self, config: dict) -> dict:
+        """Validate all parameters in a configuration dictionary.
+        
+        Args:
+            config: Configuration dictionary to validate
+            
+        Returns:
+            Validated configuration dictionary
+            
+        Raises:
+            ValueError: If any parameter is invalid
+        """
+        validated = config.copy()
+        
+        # Validate FPS
+        if "fps" in validated:
+            validated["fps"] = self._validate_fps(validated["fps"])
+        
+        # Validate durations
+        for param in ["photo_duration", "video_duration", "transition_duration"]:
+            if param in validated:
+                validated[param] = self._validate_duration(validated[param], param)
+        
+        # Validate resolution
+        if "resolution" in validated:
+            validated["resolution"] = self._validate_resolution(validated["resolution"])
+        
+        # Validate intro title parameters
+        if "intro_title" in validated and isinstance(validated["intro_title"], dict):
+            intro = validated["intro_title"]
+            if "duration" in intro:
+                intro["duration"] = self._validate_duration(intro["duration"], "intro_title.duration")
+            if "font_size" in intro:
+                intro["font_size"] = self._validate_font_size(intro["font_size"])
+        
+        return validated
+    
+    # =================================================================
+    # Singleton Implementation
+    # =================================================================
+    
     _instance = None
     _lock = threading.Lock()
     
@@ -122,8 +273,28 @@ class Config:
     # =================================================================
     
     def set(self, config: dict):
-        """Set the current configuration dictionary."""
-        self._config = config.copy() if config else None
+        """Set the current configuration dictionary with validation."""
+        if config is None:
+            self._config = None
+            return
+            
+        try:
+            validated_config = self._validate_config_dict(config)
+            self._config = validated_config.copy()
+        except ValueError as e:
+            print(f"[Config] WARNING: Invalid configuration parameter: {e}")
+            print(f"[Config] Using defaults for invalid parameters")
+            # Fall back to using defaults for invalid parameters
+            self._config = self.DEFAULT_CONFIG.copy()
+            # Try to merge valid parameters one by one
+            for key, value in config.items():
+                try:
+                    test_config = {key: value}
+                    validated_test = self._validate_config_dict(test_config)
+                    self._config[key] = validated_test[key]
+                except ValueError:
+                    # Skip invalid parameter, keep default
+                    pass
     
     def get_all(self) -> dict:
         """Get the entire configuration dictionary."""
@@ -136,10 +307,30 @@ class Config:
         return self._config.get(key, default)
     
     def update(self, updates: dict):
-        """Update configuration with new values."""
+        """Update configuration with new values, with validation."""
         if self._config is None:
             self._config = self.DEFAULT_CONFIG.copy()
-        self._config.update(updates)
+        
+        # Validate updates before applying
+        try:
+            # Create a temporary config to test validation
+            temp_config = self._config.copy()
+            temp_config.update(updates)
+            validated_temp = self._validate_config_dict(temp_config)
+            # If validation passes, apply the updates
+            self._config.update(updates)
+        except ValueError as e:
+            print(f"[Config] WARNING: Invalid configuration update: {e}")
+            print(f"[Config] Applying only valid parameters")
+            # Apply valid parameters one by one
+            for key, value in updates.items():
+                try:
+                    temp_config = self._config.copy()
+                    temp_config[key] = value
+                    self._validate_config_dict(temp_config)
+                    self._config[key] = value
+                except ValueError as param_error:
+                    print(f"[Config] Skipping invalid parameter {key}: {param_error}")
     
     def clear(self):
         """Clear the configuration (mainly for testing)."""
@@ -158,7 +349,12 @@ class Config:
         
         # Determine config path
         if output_folder:
-            config_path = self._get_project_config_path(output_folder)
+            try:
+                config_path = self._get_project_config_path(output_folder)
+            except ValueError as e:
+                print(f"[Config] ERROR: Invalid output folder path: {e}")
+                self.set(config)
+                return config
         else:
             # Try to load from last project
             app_settings = self.load_app_settings()
@@ -170,7 +366,17 @@ class Config:
                 with open(config_path, "r") as f:
                     user_config = json.load(f)
                     if isinstance(user_config, dict):
-                        config.update(user_config)
+                        # Apply user config values one by one with validation
+                        for key, value in user_config.items():
+                            if key in config:  # Only update existing keys
+                                try:
+                                    # Test the value by creating a temporary config
+                                    temp_config = {key: value}
+                                    validated_temp = self._validate_config_dict(temp_config)
+                                    config[key] = validated_temp[key]
+                                except ValueError as e:
+                                    print(f"[Config] WARNING: Ignoring invalid config value {key}={value}: {e}")
+                                    # Keep the default value
             except (json.JSONDecodeError, OSError) as e:
                 print(f"[Config] WARNING: Failed to load from {config_path} ({e}), using defaults.")
         
@@ -190,7 +396,11 @@ class Config:
             print("[Config] WARNING: No config to save")
             return
         
-        config_path = self._get_project_config_path(output_folder)
+        try:
+            config_path = self._get_project_config_path(output_folder)
+        except ValueError as e:
+            print(f"[Config] ERROR: Invalid output folder path: {e}")
+            return
         is_new_folder = not config_path.parent.exists()
         
         # Check if parent folder is actually a file (corruption from old bug)
@@ -242,11 +452,18 @@ class Config:
             
         Returns:
             Path to config file (e.g., /path/to/ProjectName/slideshow_config.json)
+            
+        Raises:
+            ValueError: If the output_folder contains path traversal attempts
         """
         if not output_folder:
             return Path(self.PROJECT_CONFIG_FILE)
         
-        output_path = Path(output_folder)
+        # SECURITY FIX: Normalize path and prevent traversal attacks
+        try:
+            output_path = Path(output_folder).resolve()
+        except (OSError, ValueError) as e:
+            raise ValueError(f"Invalid output folder path '{output_folder}': {e}")
         
         # Defensive: strip config filename if someone passed the full config path
         # (Loading/rename functions now prevent this, but keep for robustness)

@@ -1,4 +1,3 @@
-# slideshow/slideshowmodel.py
 import datetime
 from collections import Counter
 import hashlib
@@ -23,6 +22,7 @@ from slideshow.transitions.transition_factory import TransitionFactory
 from slideshow.transitions.intro_title import IntroTitle
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
+from slideshow.error_handling import ErrorHandler, safe_file_stat
 
 
 class Slideshow:
@@ -55,7 +55,7 @@ class Slideshow:
                         else:
                             item.unlink()
             except Exception as e:
-                self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
+                ErrorHandler.log_warning(self._log, "Working directory cleanup", e)
         elif self.working_dir.exists():
             self._log(f"[Slideshow] Preserving existing working dir (keep_intermediate_frames enabled)")
         
@@ -265,21 +265,105 @@ class Slideshow:
     # -------------------------------
     # FFprobe utilities
     # -------------------------------
-    def get_file_duration(self, path: Path) -> Optional[float]:
-        """Return file duration (seconds) or None."""
-        try:
-            cmd = [
-                FFmpegPaths.ffprobe(), "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(path),
-            ]
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode == 0 and result.stdout.strip():
-                return float(result.stdout.strip())
-        except Exception as e:
-            self._log(f"[Slideshow] WARN: get_file_duration failed for {path}: {e}")
-        return None
+    def _extract_video_metadata_parallel(self, video_files: List[Path], files_processed: List[int], total_files: int) -> dict:
+        """Extract creation time metadata from video files in parallel using ffprobe."""
+        def extract_single_video_metadata(video_path: Path) -> tuple[Path, Optional[float]]:
+            """Extract metadata from a single video file."""
+            try:
+                result = subprocess.run([
+                    'ffprobe', '-v', 'quiet', '-print_format', 'json',
+                    '-show_format', str(video_path)
+                ], capture_output=True, text=True, timeout=10)
+                
+                if result.returncode == 0:
+                    metadata = json.loads(result.stdout)
+                    creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
+                    if creation_time:
+                        # Handle various ISO 8601 formats
+                        for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
+                            try:
+                                dt = datetime.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
+                                return video_path, dt.timestamp()
+                            except ValueError:
+                                continue
+                return video_path, None
+            except Exception:
+                return video_path, None
+        
+        video_metadata = {}
+        if not video_files:
+            return video_metadata
+        
+        # Process videos in parallel with limited concurrency to avoid overwhelming the system
+        max_workers = min(4, len(video_files))  # Limit to 4 concurrent ffprobe processes
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all video metadata extraction tasks
+            future_to_path = {executor.submit(extract_single_video_metadata, path): path for path in video_files}
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_path):
+                path, timestamp = future.result()
+                if timestamp is not None:
+                    video_metadata[path] = timestamp
+                
+                # Update progress
+                files_processed[0] += 1
+                if files_processed[0] % 10 == 0 or files_processed[0] == total_files:
+                    if self.progress_callback:
+                        self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
+                    self._log(f"[Slideshow] Reading dates {files_processed[0]}/{total_files}...\r")
+        
+        return video_metadata
+
+    def _extract_video_metadata_parallel(self, video_files: List[Path], files_processed: List[int], total_files: int) -> dict:
+        """Extract creation time metadata from video files in parallel using ffprobe."""
+        def extract_single_video_metadata(video_path: Path) -> tuple[Path, Optional[float]]:
+            """Extract metadata from a single video file."""
+            try:
+                result = subprocess.run([
+                    'ffprobe', '-v', 'quiet', '-print_format', 'json',
+                    '-show_format', str(video_path)
+                ], capture_output=True, text=True, timeout=10)
+                
+                if result.returncode == 0:
+                    metadata = json.loads(result.stdout)
+                    creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
+                    if creation_time:
+                        # Handle various ISO 8601 formats
+                        for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
+                            try:
+                                dt = datetime.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
+                                return video_path, dt.timestamp()
+                            except ValueError:
+                                continue
+                return video_path, None
+            except Exception:
+                return video_path, None
+        
+        video_metadata = {}
+        if not video_files:
+            return video_metadata
+        
+        # Process videos in parallel with limited concurrency to avoid overwhelming the system
+        max_workers = min(4, len(video_files))  # Limit to 4 concurrent ffprobe processes
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all video metadata extraction tasks
+            future_to_path = {executor.submit(extract_single_video_metadata, path): path for path in video_files}
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_path):
+                path, timestamp = future.result()
+                if timestamp is not None:
+                    video_metadata[path] = timestamp
+                
+                # Update progress
+                files_processed[0] += 1
+                if files_processed[0] % 10 == 0 or files_processed[0] == total_files:
+                    if self.progress_callback:
+                        self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
+                    self._log(f"[Slideshow] Reading dates {files_processed[0]}/{total_files}...\r")
+        
+        return video_metadata
 
 
     def get_estimated_duration(self, fudge: float = 1.1) -> float:
@@ -356,23 +440,27 @@ class Slideshow:
             all_files = sorted(all_files_list, key=lambda p: p.name.lower())
             self._log(f"[Slideshow] Sorted {total_files} files by filename")
         else:
-            # Sort with cached timestamps (progress shown during EXIF extraction)
+            # Sort with cached timestamps (progress shown during metadata extraction)
             self._log(f"[Slideshow] Sorting {total_files} files by date taken...")
             files_processed = [0]  # Use list to allow modification in nested function
             
-            def get_file_timestamp(path: Path) -> float:
-                """Get timestamp for sorting: EXIF date for photos, creation/modification time for others"""
-                if path in timestamp_cache:
-                    return timestamp_cache[path]
-                
+            # Separate video files for parallel processing
+            video_extensions = {'.mp4', '.mov'}
+            video_files = [f for f in all_files_list if f.suffix.lower() in video_extensions]
+            photo_files = [f for f in all_files_list if f.suffix.lower() not in video_extensions]
+            
+            self._log(f"[Slideshow] Processing {len(video_files)} videos in parallel and {len(photo_files)} photos...")
+            
+            # Process all video files in parallel first
+            video_metadata = self._extract_video_metadata_parallel(video_files, files_processed, len(video_files))
+            
+            # Process photos sequentially (EXIF is usually fast)
+            def get_photo_timestamp(path: Path) -> float:
+                """Get timestamp for photo files: EXIF date or creation/modification time."""
                 ext = path.suffix.lower()
                 
                 # Default fallback: try creation time first (st_birthtime on macOS), then modification time
-                try:
-                    stat = path.stat()
-                    timestamp = getattr(stat, 'st_birthtime', stat.st_mtime)
-                except OSError:
-                    timestamp = 0.0
+                timestamp = safe_file_stat(path, self._log)
                 
                 # For photos, try to get EXIF date
                 if ext in ('.jpg', '.jpeg', '.heic', '.heif'):
@@ -389,45 +477,35 @@ class Slideshow:
                                         dt = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
                                         timestamp = dt.timestamp()
                                         break
-                    except Exception:
-                        pass  # Use creation/modification time fallback
-                
-                # For videos, try to get creation date from metadata
-                elif ext in ('.mp4', '.mov'):
-                    try:
-                        # Use ffprobe to get creation time
-                        result = subprocess.run([
-                            'ffprobe', '-v', 'quiet', '-print_format', 'json',
-                            '-show_format', str(path)
-                        ], capture_output=True, text=True, timeout=5)
-                        
-                        if result.returncode == 0:
-                            metadata = json.loads(result.stdout)
-                            creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
-                            if creation_time:
-                                # Handle various ISO 8601 formats
-                                for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
-                                    try:
-                                        dt = datetime.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
-                                        timestamp = dt.timestamp()
-                                        break
-                                    except ValueError:
-                                        continue
-                    except Exception:
-                        pass  # Use creation/modification time fallback
-                
-                timestamp_cache[path] = timestamp
-                files_processed[0] += 1
-                
-                # Update progress bar and log every 50 files
-                if files_processed[0] % 50 == 0 or files_processed[0] == total_files:
-                    if self.progress_callback:
-                        self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
-                    self._log(f"[Slideshow] Reading dates {files_processed[0]}/{total_files}...\r")
+                    except Exception as e:
+                        ErrorHandler.log_warning(self._log, f"EXIF extraction from {path.name}", e)
+                        # Keep the file system timestamp
                 
                 return timestamp
             
-            all_files = sorted(all_files_list, key=get_file_timestamp)
+            # Build complete timestamp cache
+            timestamp_cache = {}
+            
+            # Add video metadata (already processed in parallel)
+            timestamp_cache.update(video_metadata)
+            
+            # Add photo timestamps (process sequentially)
+            for photo_path in photo_files:
+                    # Get timestamp for this photo with proper error handling
+                
+                # Update progress
+                if files_processed[0] % 50 == 0 or files_processed[0] == total_files:
+                    if self.progress_callback:
+                        self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
+                    self._log(f"[Slideshow] Reading dates {files_processed[0]}/{total_files}...\\r")
+            
+            # For files without specific metadata, use file system timestamps
+            for file_path in all_files_list:
+                if file_path not in timestamp_cache:
+                    timestamp_cache[file_path] = safe_file_stat(file_path, self._log)
+            
+            # Sort using the complete timestamp cache
+            all_files = sorted(all_files_list, key=lambda p: timestamp_cache.get(p, 0.0))
             self._log(f"[Slideshow] Sorted {total_files} files by date taken")
         
         # Use the filtered and sorted files
