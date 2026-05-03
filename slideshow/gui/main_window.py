@@ -1582,6 +1582,26 @@ class GUI(tk.Tk):
     def _invalidate_slide_cache(self):
         """Invalidate cached slides when input folder or sort settings change"""
         self.cached_slides = None
+        
+        # Also clear the file-based slide cache to ensure preview and export use same order
+        try:
+            import hashlib
+            from pathlib import Path
+            
+            # Calculate cache path using same logic as slideshow model
+            input_folder = self.config_data.get("input_folder", "")
+            sort_key = f"{input_folder}_{self.config_data.get('sort_by_filename', False)}_{self.config_data.get('recurse_folders', False)}_{self.config_data.get('older_images_no_exif', False)}"
+            cache_hash = hashlib.md5(sort_key.encode()).hexdigest()[:12]
+            
+            output_folder = Path(self.config_data.get("output_folder", "media/output"))
+            working_dir = output_folder / "working"
+            cache_path = working_dir / "ffmpeg_cache" / f"slide_order_{cache_hash}.json"
+            
+            if cache_path.exists():
+                cache_path.unlink()
+                self.log_message(f"[Cache] Cleared slide order cache: {cache_path.name}")
+        except Exception as e:
+            self.log_message(f"[Cache] Warning: Could not clear slide cache: {e}")
     
     def _get_sorted_image_files(self):
         """Get sorted list of image files using same logic as slideshow export"""

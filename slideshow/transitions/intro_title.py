@@ -55,10 +55,13 @@ class IntroTitle:
         import hashlib
         bg_hash = hashlib.md5(background_image.tobytes()).hexdigest()[:8]
         
-        virtual_path = Path(f"intro_title_{bg_hash}")
+        # Use more unique virtual path to avoid any possible collisions with slides
+        # Prefix with __INTRO__ to ensure it never matches any slide cache keys
+        virtual_path = Path(f"__INTRO__title_render_{bg_hash}_{self.duration}_{self.font_size}")
         
         cache_params = {
             "operation": "intro_title_render", 
+            "cache_version": 3,
             "text": self.text,
             "duration": self.duration,
             "font_path": self.font_path,
@@ -84,8 +87,8 @@ class IntroTitle:
             shutil.copy2(cached_intro, output_path)
             return output_path
 
-        # Ensure background matches target resolution
-        bg = background_image.convert("RGBA").resize(self.resolution)
+        # Preserve aspect ratio and letterbox to target resolution with black bars.
+        bg = self._fit_background_to_resolution(background_image)
         
         # Load font with smart weight-based selection
         font = self._load_font_with_weight()
@@ -93,12 +96,16 @@ class IntroTitle:
         # Pre-render the text once to avoid font rendering on every frame
         text_img = self._create_text_image(font)
         
-        rotation_duration = 6.0  # 6 seconds of rotation
+        # Animate title for (duration - 1s), then hold final frame for 1s.
+        total_duration = max(0.0, float(self.duration))
+        rotation_duration = max(0.0, total_duration - 1.0)
+        static_duration = total_duration - rotation_duration
         rotation_frames = int(rotation_duration * self.fps)
-        static_duration = self.duration - rotation_duration  # remaining time is static
         
         # Angle step for 360° rotation in 6 seconds
-        angle_step = (360 / rotation_frames) * (-1 if self.clockwise else 1)
+        angle_step = 0.0
+        if rotation_frames > 0:
+            angle_step = (360 / rotation_frames) * (-1 if self.clockwise else 1)
 
         # Use FFmpeg pipe for direct frame streaming (much faster than temp files)
         cmd = [
@@ -125,10 +132,13 @@ class IntroTitle:
                 # Convert to raw RGBA bytes and send to FFmpeg
                 ffmpeg_process.stdin.write(frame.tobytes())
             
-            # For static frames, render once and repeat using FFmpeg
+            # For static frames, render once and repeat using FFmpeg.
+            # Hold the final animated orientation to avoid any end-of-animation jump.
             if static_duration > 0:
-                # Render final static frame
-                final_angle = 360 if self.clockwise else -360
+                if rotation_frames > 0:
+                    final_angle = (rotation_frames - 1) * angle_step
+                else:
+                    final_angle = 0.0
                 static_frame = self._render_frame_optimized(bg, text_img, final_angle)
                 static_frame_bytes = static_frame.tobytes()
                 
@@ -153,6 +163,26 @@ class IntroTitle:
         FFmpegCache.store_clip(virtual_path, cache_params, output_path)
 
         return output_path
+
+    def _fit_background_to_resolution(self, background_image: Image.Image) -> Image.Image:
+        """Fit source image into target resolution without distortion, padding with black."""
+        target_w, target_h = self.resolution
+        src = background_image.convert("RGBA")
+        src_w, src_h = src.size
+
+        if src_w <= 0 or src_h <= 0:
+            return Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
+
+        scale = min(target_w / src_w, target_h / src_h)
+        new_w = max(1, int(src_w * scale))
+        new_h = max(1, int(src_h * scale))
+
+        resized = src.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        canvas = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
+        offset_x = (target_w - new_w) // 2
+        offset_y = (target_h - new_h) // 2
+        canvas.paste(resized, (offset_x, offset_y))
+        return canvas
 
     def _load_font_with_weight(self):
         """Load font with smart fallbacks based on font weight setting and app settings."""

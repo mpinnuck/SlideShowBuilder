@@ -234,21 +234,101 @@ class ImageRotatorDialog:
             self.parent.log_message(f"Error loading image {filename}: {e}")
     
     def _show_video_placeholder(self, slide):
-        """Show placeholder for VideoSlide"""
+        """Show first frame of VideoSlide as preview image"""
         video_path = slide.path
         filename = video_path.name
         
         self.filename_label.config(text=f"{filename} [VIDEO]")
         self.date_label.config(text="Video file")
         
-        # Show text placeholder
+        # Try to extract first frame and display it
+        try:
+            import tempfile
+            import subprocess
+            from slideshow.transitions.ffmpeg_paths import FFmpegPaths
+            
+            # Create temporary file for the extracted frame
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
+                temp_image_path = temp_file.name
+            
+            # Extract first frame using FFmpeg
+            cmd = [
+                FFmpegPaths.ffmpeg(),
+                '-i', str(video_path),
+                '-vframes', '1',  # Extract only 1 frame
+                '-q:v', '2',      # High quality
+                '-y',             # Overwrite output file
+                temp_image_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, timeout=10)
+            
+            if result.returncode == 0:
+                # Successfully extracted frame, display it as image
+                try:
+                    with Image.open(temp_image_path) as img:
+                        img = ImageOps.exif_transpose(img)
+                        if img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        img = img.copy()  # Make a copy since we'll close the original
+                    
+                    # Scale and display the image (same logic as _show_photo)
+                    canvas_width = self.canvas.winfo_width()
+                    canvas_height = self.canvas.winfo_height()
+                    
+                    if canvas_width <= 1:
+                        canvas_width = 1000
+                    if canvas_height <= 1:
+                        canvas_height = 600
+                    
+                    img_ratio = img.width / img.height
+                    canvas_ratio = canvas_width / canvas_height
+                    
+                    if img_ratio > canvas_ratio:
+                        new_width = canvas_width - 40
+                        new_height = int(new_width / img_ratio)
+                    else:
+                        new_height = canvas_height - 40
+                        new_width = int(new_height * img_ratio)
+                    
+                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    self.photo = ImageTk.PhotoImage(img)
+                    
+                    self.canvas.delete("all")
+                    x = canvas_width // 2
+                    y = canvas_height // 2
+                    self.canvas.create_image(x, y, image=self.photo)
+                    
+                    # Clean up temp file
+                    import os
+                    try:
+                        os.unlink(temp_image_path)
+                    except:
+                        pass  # Ignore cleanup errors
+                    
+                    return  # Successfully displayed video frame
+                    
+                except Exception as img_error:
+                    self.parent.log_message(f"Error loading extracted frame from {filename}: {img_error}")
+            
+            # Clean up temp file on error
+            import os
+            try:
+                os.unlink(temp_image_path)
+            except:
+                pass
+                
+        except Exception as e:
+            self.parent.log_message(f"Error extracting frame from video {filename}: {e}")
+        
+        # Fall back to text placeholder if frame extraction failed
         self.canvas.delete("all")
         canvas_width = self.canvas.winfo_width() or 1000
         canvas_height = self.canvas.winfo_height() or 600
         
         self.canvas.create_text(
             canvas_width // 2, canvas_height // 2,
-            text=f"VIDEO\n{filename}",
+            text=f"VIDEO\n{filename}\n(Could not extract preview)",
             font=("Arial", 24, "bold"),
             fill="gray"
         )

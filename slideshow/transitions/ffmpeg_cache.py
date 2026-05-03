@@ -405,7 +405,8 @@ class FFmpegCache:
             sequence_sub = 0  # 0 for slides, 1 for transitions, 2 for frames
             
             if operation == "intro_title_render":
-                sequence_pos = -1  # Intro comes first
+                sequence_pos = -1  # Intro comes first - but exclude from slide browsing
+                sequence_sub = 3  # Use 3 to separate from slides (0), transitions (1), frames (2)
             elif operation in slide_operations:
                 # Regular slide - use its position in the sorted list
                 source_key = str(source_path.absolute())
@@ -493,7 +494,7 @@ class FFmpegCache:
             })
         
         # Separate clips and frames for different sorting strategies
-        clips = [e for e in mapped_entries if e["type"] == "clip"]
+        clips = [e for e in mapped_entries if e["type"] == "clip" and e["operation"] != "intro_title_render"]  # Exclude intro titles from browser
         frames = [e for e in mapped_entries if e["type"] == "frame"]
         
         # Sort clips in video concatenation order: intro → slide1 → transition1 → slide2 → transition2 → ...
@@ -503,13 +504,13 @@ class FFmpegCache:
         frames.sort(key=lambda x: x["cached_file_mtime"])
         
         # Combine for backward compatibility with existing code
-        all_entries = clips + frames
+        all_entries = clips + frames  # Note: intro titles excluded from clips
         
         return {
             "enabled": cls._enabled,
-            "total_entries": len(all_entries),
+            "total_entries": len(all_entries),  # Count excludes intro titles
             "entries": all_entries,
-            "clips": clips,
+            "clips": clips,  # Excludes intro titles
             "frames": frames
         }
 

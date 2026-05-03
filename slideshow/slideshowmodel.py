@@ -18,7 +18,7 @@ from slideshow.slides.video_slide import VideoSlide
 from slideshow.transitions import get_transition
 from slideshow.transitions.utils import get_video_duration, add_soundtrack_with_fade
 from slideshow.config import DEFAULT_CONFIG
-from slideshow.transitions.transition_factory import TransitionFactory
+from slideshow.transitions.transition_factory import TransitionFactory  
 from slideshow.transitions.intro_title import IntroTitle
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
@@ -45,7 +45,7 @@ class Slideshow:
         keep_intermediate = self.config.get("keep_intermediate_frames", False)
         
         if self.working_dir.exists() and not keep_intermediate:
-            self._log(f"[Slideshow] Cleaning existing working dir: {self.working_dir}")
+            self._log(f"Cleaning existing working dir: {self.working_dir}")
             try:
                 # Clean everything except ffmpeg_cache directory
                 for item in self.working_dir.iterdir():
@@ -57,7 +57,7 @@ class Slideshow:
             except Exception as e:
                 ErrorHandler.log_warning(self._log, "Working directory cleanup", e)
         elif self.working_dir.exists():
-            self._log(f"[Slideshow] Preserving existing working dir (keep_intermediate_frames enabled)")
+            self._log(f"Preserving existing working dir (keep_intermediate_frames enabled)")
         
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
@@ -67,7 +67,7 @@ class Slideshow:
 
         fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
         resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
-        self._log(f"[Slideshow] Using fps: {fps}, resolution: {resolution}")
+        self._log(f"Using fps: {fps}, resolution: {resolution}")
 
 
         # Ceate slected transition
@@ -159,7 +159,7 @@ class Slideshow:
             with open(cache_path, 'w') as f:
                 json.dump(slide_data, f, indent=2)
         except Exception as e:
-            self._log(f"[Slideshow] Warning: Could not save slide cache: {e}")
+            self._log(f"Warning: Could not save slide cache: {e}")
 
     def _log_input_file_counts(self):
         """Log a breakdown of input file types from the loaded slides."""
@@ -174,9 +174,9 @@ class Slideshow:
             counts = Counter(f.suffix.lower() for f in files)
             total = sum(counts.values())
             parts = ", ".join(f"{count} {ext.lstrip('.').upper()}" for ext, count in sorted(counts.items()) if count > 0)
-            self._log(f"[Slideshow] Input files: {parts} = {total} total")
+            self._log(f"Input files: {parts} = {total} total")
         except Exception as e:
-            self._log(f"[Slideshow] Could not count input file types: {e}")
+            self._log(f"Could not count input file types: {e}")
 
     def _load_slide_cache(self) -> bool:
         """Try to load slides from cache. Returns True if successful."""
@@ -189,7 +189,12 @@ class Slideshow:
             with open(cache_path, 'r') as f:
                 slide_data = json.load(f)
             
-            # Recreate slides from cache, skipping any with missing files
+            # Get current input folder for validation
+            input_folder = Path(self.config["input_folder"])
+            if not input_folder.exists():
+                return False
+            
+            # Recreate slides from cache, skipping any with missing files or files not in current input folder
             fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
             resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
             skipped = 0
@@ -203,17 +208,33 @@ class Slideshow:
                     if idx % max(1, total_items // 10) == 0 or idx == total_items - 1:
                         self.progress_callback(idx + 1, total_items, f"Loading {idx + 1}/{total_items} slides from cache...")
                 
-                # Check if files exist
+                # Skip if file doesn't exist
+                if not path.exists():
+                    skipped += 1
+                    continue
+                
+                # Skip if file is not within the current input folder
+                try:
+                    path.relative_to(input_folder)
+                except ValueError:
+                    # File is not within the input folder - skip it
+                    skipped += 1
+                    continue
+                
+                # Check if files exist for multi-slide
                 skip_this_slide = False
                 if item["type"] == "multi":
                     # For MultiSlide, check all component files
                     media_files = [Path(p) for p in item.get("media_files", [])]
                     if not all(p.exists() for p in media_files):
                         skip_this_slide = True
-                else:
-                    # For PhotoSlide/VideoSlide, check the main file
-                    if not path.exists():
-                        skip_this_slide = True
+                    # Also check that all component files are within input folder
+                    for media_file in media_files:
+                        try:
+                            media_file.relative_to(input_folder)
+                        except ValueError:
+                            skip_this_slide = True
+                            break
                 
                 if skip_this_slide:
                     skipped += 1
@@ -252,14 +273,14 @@ class Slideshow:
                         self.slides.append(multi_slide)
             
             if skipped > 0:
-                self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache ({skipped} deleted files skipped)")
+                self._log(f"Loaded {len(self.slides)} slides from cache ({skipped} stale entries skipped)")
             else:
-                self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache")
+                self._log(f"Loaded {len(self.slides)} slides from cache")
             
             return True
             
         except Exception as e:
-            self._log(f"[Slideshow] Could not load slide cache: {e}")
+            self._log(f"Could not load slide cache: {e}")
             return False
 
     # -------------------------------
@@ -311,7 +332,7 @@ class Slideshow:
                 if files_processed[0] % 10 == 0 or files_processed[0] == total_files:
                     if self.progress_callback:
                         self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
-                    self._log(f"[Slideshow] Reading dates {files_processed[0]}/{total_files}...\r")
+                    self._log(f"Reading dates {files_processed[0]}/{total_files}...\r")
         
         return video_metadata
 
@@ -361,7 +382,7 @@ class Slideshow:
                 if files_processed[0] % 10 == 0 or files_processed[0] == total_files:
                     if self.progress_callback:
                         self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
-                    self._log(f"[Slideshow] Reading dates {files_processed[0]}/{total_files}...\r")
+                    self._log(f"Reading dates {files_processed[0]}/{total_files}...\r")
         
         return video_metadata
 
@@ -372,19 +393,28 @@ class Slideshow:
             total += (len(self.slides) - 1) * self.config.get("transition_duration", 1.0)
         return total * fudge
 
+    def get_file_duration(self, path: Path) -> Optional[float]:
+        """Return file duration (seconds) or None."""
+        try:
+            from slideshow.transitions.utils import get_video_duration
+            return get_video_duration(path)
+        except Exception as e:
+            ErrorHandler.log_warning(self._log, f"File duration extraction for {path.name}", e)
+        return None
+
     # -------------------------------
     # Slide Loading
     # -------------------------------
     def load_slides(self):
         input_folder = Path(self.config["input_folder"])
         if not input_folder.exists():
-            self._log(f"[Slideshow] Input folder not found: {input_folder}")
+            self._log(f"Input folder not found: {input_folder}")
             return
 
         # Try to load from cache first
         cache_loaded = self._load_slide_cache()
         if cache_loaded:
-            self._log(f"[Slideshow] Loaded {len(self.slides)} slides from cache")
+            self._log(f"Loaded {len(self.slides)} slides from cache")
             # Final progress update (must come before _log_input_file_counts, as the progress
             # message uses \r which deletes the previous log line)
             if self.progress_callback:
@@ -402,9 +432,9 @@ class Slideshow:
         # Log that we're starting to load files
         recurse_folders = self.config.get("recurse_folders", False)
         if recurse_folders:
-            self._log(f"[Slideshow] Reading files recursively from {input_folder}...")
+            self._log(f"Reading files recursively from {input_folder}...")
         else:
-            self._log(f"[Slideshow] Reading files from {input_folder}...")
+            self._log(f"Reading files from {input_folder}...")
         
         # Get all files (recursive or not)
         if recurse_folders:
@@ -412,19 +442,44 @@ class Slideshow:
         else:
             all_files_list = [f for f in input_folder.glob("*") if f.is_file()]
         
-        self._log(f"[Slideshow] Found {len(all_files_list)} total files")
+        self._log(f"Found {len(all_files_list)} total files in input folder: {input_folder}")
         
         # Filter to only supported media files BEFORE sorting (more efficient)
         # Photos: JPEG, PNG, HEIC/HEIF
         # Videos: MP4, MOV
         supported_extensions = {'.jpg', '.jpeg', '.png', '.heic', '.heif', '.mp4', '.mov'}
         ignored_names = {'.ds_store', 'thumbs.db', 'desktop.ini'}
-        all_files_list = [
-            f for f in all_files_list 
-            if f.suffix.lower() in supported_extensions
-            and f.name.lower() not in ignored_names
-        ]
+        
+        # Count files before filtering and track what gets filtered
+        before_filter = len(all_files_list)
+        filtered_files = []
+        
+        # Filter files and keep track of what's excluded
+        filtered_files_list = []
+        
+        for f in all_files_list:
+            if (f.suffix.lower() in supported_extensions
+                and f.name.lower() not in ignored_names):
+                filtered_files_list.append(f)
+            else:
+                reason = ""
+                if f.name.lower() in ignored_names:
+                    reason = " (system file)"
+                elif f.suffix.lower() not in supported_extensions:
+                    reason = " (unsupported format)"
+                    
+                filtered_files.append(f.name + reason)
+        
+        all_files_list = filtered_files_list
         total_files = len(all_files_list)
+        filtered_out = before_filter - total_files
+        
+        if filtered_out > 0:
+            filtered_names = ', '.join(filtered_files[:5])  # Show first 5 filtered files
+            if len(filtered_files) > 5:
+                filtered_names += f" (and {len(filtered_files) - 5} more)"
+            self._log(f"Filtered out {filtered_out} files: {filtered_names}")
+        self._log(f"Processing {total_files} supported media files")
 
         # Report progress for the scanning phase
         if self.progress_callback:
@@ -436,12 +491,12 @@ class Slideshow:
         
         if sort_by_filename:
             # Sort alphabetically by filename (no EXIF extraction needed)
-            self._log(f"[Slideshow] Sorting {total_files} files by filename...")
+            self._log(f"Sorting {total_files} files by filename...")
             all_files = sorted(all_files_list, key=lambda p: p.name.lower())
-            self._log(f"[Slideshow] Sorted {total_files} files by filename")
+            self._log(f"Sorted {total_files} files by filename")
         else:
             # Sort with cached timestamps (progress shown during metadata extraction)
-            self._log(f"[Slideshow] Sorting {total_files} files by date taken...")
+            self._log(f"Sorting {total_files} files by date taken...")
             files_processed = [0]  # Use list to allow modification in nested function
             
             # Separate video files for parallel processing
@@ -449,7 +504,7 @@ class Slideshow:
             video_files = [f for f in all_files_list if f.suffix.lower() in video_extensions]
             photo_files = [f for f in all_files_list if f.suffix.lower() not in video_extensions]
             
-            self._log(f"[Slideshow] Processing {len(video_files)} videos in parallel and {len(photo_files)} photos...")
+            self._log(f"Processing {len(video_files)} videos in parallel and {len(photo_files)} photos...")
             
             # Process all video files in parallel first
             video_metadata = self._extract_video_metadata_parallel(video_files, files_processed, len(video_files))
@@ -469,9 +524,10 @@ class Slideshow:
                         from PIL.ExifTags import TAGS
                         
                         with Image.open(path) as img:
-                            exif = img._getexif()
-                            if exif:
-                                for tag_id, value in exif.items():
+                            # Use modern getexif() method which works for both JPEG and HEIC
+                            exif_dict = img.getexif()
+                            if exif_dict:
+                                for tag_id, value in exif_dict.items():
                                     tag_name = TAGS.get(tag_id, tag_id)
                                     if tag_name == 'DateTimeOriginal':
                                         dt = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
@@ -491,22 +547,24 @@ class Slideshow:
             
             # Add photo timestamps (process sequentially)
             for photo_path in photo_files:
-                    # Get timestamp for this photo with proper error handling
+                # Get timestamp for this photo with proper error handling
+                timestamp_cache[photo_path] = get_photo_timestamp(photo_path)
+                files_processed[0] += 1
                 
                 # Update progress
-                if files_processed[0] % 50 == 0 or files_processed[0] == total_files:
+                if files_processed[0] % 10 == 0 or files_processed[0] == total_files:
                     if self.progress_callback:
                         self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
-                    self._log(f"[Slideshow] Reading dates {files_processed[0]}/{total_files}...\\r")
+                    self._log(f"Reading dates {files_processed[0]}/{total_files}...\r")
             
             # For files without specific metadata, use file system timestamps
             for file_path in all_files_list:
                 if file_path not in timestamp_cache:
                     timestamp_cache[file_path] = safe_file_stat(file_path, self._log)
             
-            # Sort using the complete timestamp cache
-            all_files = sorted(all_files_list, key=lambda p: timestamp_cache.get(p, 0.0))
-            self._log(f"[Slideshow] Sorted {total_files} files by date taken")
+            # Sort using the complete timestamp cache with filename as tiebreaker for stability
+            all_files = sorted(all_files_list, key=lambda p: (timestamp_cache.get(p, 0.0), p.name.lower()))
+            self._log(f"Sorted {total_files} files by date taken")
         
         # Use the filtered and sorted files
         media_files = all_files
@@ -523,7 +581,7 @@ class Slideshow:
         
         # Log initial message
         total_files = len(media_files)
-        self._log(f"[Slideshow] Loading {total_files} files...")
+        self._log(f"Loading {total_files} files...")
         
         # Report initial progress
         if self.progress_callback:
@@ -591,40 +649,38 @@ class Slideshow:
             elif ext in (".mp4", ".mov"):
                 video_duration_setting = self.config.get("video_duration", 5.0)
                 if video_duration_setting == 0:
-                    self._log(f"[Slideshow] Skipping video: {path.name} (video_duration=0)")
+                    self._log(f"Skipping video: {path.name} (video_duration=0)")
                     continue
                 try:
                     actual_duration = get_video_duration(path)
                 except Exception as e:
-                    self._log(f"[Slideshow] WARNING: could not get duration for {path.name}: {e}")
+                    self._log(f"WARNING: could not get duration for {path.name}: {e}")
                     actual_duration = video_duration_setting
 
                 resolution = tuple(self.config.get("resolution", DEFAULT_CONFIG["resolution"]))
                 fps = self.config.get("fps", DEFAULT_CONFIG["fps"])
                 
                 if video_duration_setting == -1:
-                    self._log(f"[Slideshow] Using full duration for {path.name}: {actual_duration:.2f}s")
+                    self._log(f"Using full duration for {path.name}: {actual_duration:.2f}s")
                     self.slides.append(VideoSlide(path, actual_duration, fps=fps, resolution=resolution, creation_date=timestamp))
                     video_count += 1
                 else:
-                    # Force last video to play full duration for a natural, complete ending
-                    # Other videos are limited to video_duration_setting to maintain consistent pacing
-                    is_last_file = (i == len(media_files) - 1)
-                    final_duration = actual_duration if is_last_file else min(video_duration_setting, actual_duration)
+                    # Apply video_duration_setting consistently to all videos
+                    final_duration = min(video_duration_setting, actual_duration)
                     
                     self.slides.append(VideoSlide(path, final_duration, fps=fps, resolution=resolution, creation_date=timestamp))
                     video_count += 1
             
             # Show progress every 10 files
             if (i + 1) % 10 == 0 or (i + 1) == total_files:
-                self._log(f"[Slideshow] Loaded {i + 1}/{total_files} files...\r")
+                self._log(f"Loaded {i + 1}/{total_files} files...\r")
         
         # Log import summary
         total_input_files = len(media_files)
         total_slides = len(self.slides)
         single_photo_slides = (photo_count - (multislide_count * 3))  # Photos not in MultiSlides
         
-        self._log(f"[Slideshow] Importing {total_input_files} files → {total_slides} slides: {single_photo_slides} photo, {video_count} video, {multislide_count} multi")
+        self._log(f"Importing {total_input_files} files → {total_slides} slides: {single_photo_slides} photo, {video_count} video, {multislide_count} multi")
         self._log_input_file_counts()
 
         # Save slide list to cache for faster loading next time
@@ -651,7 +707,7 @@ class Slideshow:
         base_offset: processing_weight offset (start of assembly region)
         span_steps:  portion of assembly steps to fill (e.g. 40% or 50% of assembly half)
         """
-#        self._log(f"[Slideshow] Running ffmpeg:\n{' '.join(cmd)}")
+#        self._log(f"Running ffmpeg:\n{' '.join(cmd)}")
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         # Drain stderr in a background thread to prevent pipe buffer deadlock
         stderr_lines = []
@@ -665,7 +721,7 @@ class Slideshow:
             while True:
                 # Check for cancellation
                 if self.cancel_check and self.cancel_check():
-                    self._log("[Slideshow] Cancelling FFmpeg process...")
+                    self._log("Cancelling FFmpeg process...")
                     proc.terminate()  # Send SIGTERM
                     try:
                         proc.wait(timeout=2)  # Wait up to 2 seconds for graceful termination
@@ -703,7 +759,7 @@ class Slideshow:
     def set_transition_type(self, transition_type: str):
         """Update the transition type in the configuration."""
         self.config["transition_type"] = transition_type
-        self._log(f"[Slideshow] Transition type updated to: {transition_type}")
+        self._log(f"Transition type updated to: {transition_type}")
 
     # -------------------------------
     # Rendering
@@ -729,7 +785,8 @@ class Slideshow:
 
 
             # --- Render slides (parallel — each slide is independent) ---
-            self._log("")
+            # Intro title is rendered as a separate opening clip after slide clips are ready.
+            
             completed = 0
             # VideoToolbox corrupts output with too many concurrent sessions; limit to 4
             hw_accel = cfg.get('hardware_acceleration', False)
@@ -745,38 +802,67 @@ class Slideshow:
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {executor.submit(_render_slide, s): s for s in self.slides}
+                
                 for future in as_completed(futures):
                     if self.cancel_check and self.cancel_check():
                         executor.shutdown(wait=False, cancel_futures=True)
-                        self._log("[Slideshow] Cancelling export...")
+                        self._log("Cancelling export...")
                         raise RuntimeError("Export cancelled by user")
                     try:
+                        slide = futures[future]
                         future.result()  # re-raise any exception
                     except Exception as e:
                         # Get the slide that failed from the futures mapping
                         failed_slide = futures[future]
-                        self._log(f"[Slideshow] Failed rendering slide {completed+1}/{total_items}: {failed_slide.path.name}")
+                        self._log(f"Failed rendering slide: {failed_slide.path.name}")
                         raise
                     completed += 1
-                    self._log(f"[Slideshow] Rendering slides ({completed}/{total_items})...\r")
+                    print(f"\rRendering slides ({completed}/{total_items})...", end="", flush=True)
                     if self.progress_callback:
-                        self.progress_callback(completed, total_weighted_steps)
+                        if completed % 10 == 0 or completed == total_items:
+                            self.progress_callback(
+                                completed,
+                                total_weighted_steps,
+                                f"Rendering {completed}/{total_items} slides..."
+                            )
+                        else:
+                            self.progress_callback(completed, total_weighted_steps)
+                    
+                    # Log final completion to app window
+                    if completed == total_items:
+                        self._log(f"Rendered {completed} slides successfully")
 
-            # --- Render Intro Title (before slides) ---
+            # --- Render intro title if enabled ---
             intro = IntroTitle()
-            self._intro_clip = None
-#            if False: #intro.enabled and self.slides:
             if intro.enabled and self.slides:
                 first_slide = self.slides[0]
-                first_frame = first_slide.get_from_image()
-                intro_path = self.working_dir / "intro_title.mp4"
-                self._log(f"[Slideshow] Rendering intro title: {intro.text}")
-                self._intro_clip = intro.render(first_frame, intro_path)
+                self._log(f"Rendering intro title '{intro.text}' using first slide as background: {first_slide.path.name}")
+                
+                # Create intro title clip using first slide as background
+                from PIL import Image, ImageOps
+                try:
+                    with Image.open(first_slide.path) as bg_img:
+                        bg_img = ImageOps.exif_transpose(bg_img)
+                        if bg_img.mode != 'RGB':
+                            bg_img = bg_img.convert('RGB')
+                        
+                        intro_clip_path = self.working_dir / "intro_title.mp4"
+                        intro.render(bg_img, intro_clip_path)
+                        self._intro_clip = intro_clip_path
+                        self._log("Intro title rendered successfully")
+                except Exception as e:
+                    self._log(f"Warning: Failed to render intro title: {str(e)}")
+                    self._intro_clip = None
+            else:
+                self._intro_clip = None
 
+            # Keep self._intro_clip from intro rendering; it is prepended in concat below.
 
             # --- Render transitions (parallel — each is independent, slides are read-only) ---
             transition_clips = [None] * (total_items - 1)  # Pre-allocate ordered list
             completed_trans = 0
+
+            self._log(f"Starting to render transitions ({total_items - 1} transitions)...")
 
             def _render_transition(i):
                 trans_out = self.working_dir / f"trans_{i:03}.mp4"
@@ -788,28 +874,28 @@ class Slideshow:
                 for future in as_completed(futures):
                     if self.cancel_check and self.cancel_check():
                         executor.shutdown(wait=False, cancel_futures=True)
-                        self._log("[Slideshow] Cancelling export...")
+                        self._log("Cancelling export...")
                         raise RuntimeError("Export cancelled by user")
                     idx, trans_out = future.result()
                     transition_clips[idx] = trans_out
                     completed_trans += 1
-                    self._log(f"[Slideshow] Rendering transitions ({completed_trans}/{total_transitions})...\r")
+                    self._log(f"Rendering transitions ({completed_trans}/{total_transitions})...\r")
                     if self.progress_callback:
                         self.progress_callback(total_items + completed_trans, total_weighted_steps)
 
             # --- Write concat file ---
             # Check for cancellation before assembly
             if self.cancel_check and self.cancel_check():
-                self._log("[Slideshow] Cancelling export...")
+                self._log("Cancelling export...")
                 raise RuntimeError("Export cancelled by user")
             
-            self._log("[Slideshow] Building concat file...")
+            self._log("Building concat file...")
             
             with self.concat_file.open("w") as f:
-                # Prepend intro clip if it exists
-                if self._intro_clip:
+                # Add intro title clip first if it exists
+                if self._intro_clip and self._intro_clip.exists():
                     f.write(f"file '{self._intro_clip.resolve()}'\n")
-
+                
                 for i, slide in enumerate(self.slides):
                     slide_clip = slide.get_rendered_clip()
                     f.write(f"file '{slide_clip.resolve()}'\n")
@@ -818,6 +904,11 @@ class Slideshow:
                     if i < len(transition_clips):
                         trans_clip = transition_clips[i]
                         f.write(f"file '{trans_clip.resolve()}'\n")
+            
+            # Log the total structure for debugging
+            total_clips = len(self.slides) + len(transition_clips) + (1 if self._intro_clip and self._intro_clip.exists() else 0)
+            self._log(f"Concat file contains {total_clips} clips: " +
+                     f"slides={len(self.slides)}, transitions={len(transition_clips)}, intro={(1 if self._intro_clip and self._intro_clip.exists() else 0)}")
 
             # --- Assemble & mux ---
             expected_duration = self.get_estimated_duration()
@@ -825,10 +916,10 @@ class Slideshow:
             minutes = int((expected_duration % 3600) // 60)
             seconds = expected_duration % 60
             duration_str = f"{hours:02d}:{minutes:02d}:{seconds:05.2f}"
-            self._log(f"[Slideshow] Estimated duration for progress scaling: {duration_str}")
+            self._log(f"Estimated duration for progress scaling: {duration_str}")
 
             # --- Pass 1: Assemble video-only ---
-            self._log(f"[Slideshow] Assembling video-only...")
+            self._log(f"Assembling video-only...")
             cmd_pass1 = [
                 FFmpegPaths.ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "concat", "-safe", "0", "-i", str(self.concat_file),
@@ -848,15 +939,15 @@ class Slideshow:
                 minutes = int((actual_duration % 3600) // 60)
                 seconds = actual_duration % 60
                 duration_str = f"{hours:02d}:{minutes:02d}:{seconds:05.2f}"
-                self._log(f"[Slideshow] Video-only duration: {duration_str}")
+                self._log(f"Video-only duration: {duration_str}")
             else:
-                self._log("[Slideshow] WARNING: could not determine duration — using estimate")
+                self._log("WARNING: could not determine duration — using estimate")
 
             # --- Pass 2: Mux soundtrack (if present) using shared utility ---
             soundtrack_path = self.config.get("soundtrack", "")
             has_soundtrack = bool(soundtrack_path) and Path(soundtrack_path).exists()
 
-            self._log("[Slideshow] Muxing soundtrack..." if has_soundtrack else "[Slideshow] Finalizing video (no soundtrack)...")
+            self._log("Muxing soundtrack..." if has_soundtrack else "Finalizing video (no soundtrack)...")
             
             # Use shared utility function for soundtrack muxing
             success = add_soundtrack_with_fade(
@@ -874,7 +965,7 @@ class Slideshow:
             if self.progress_callback:
                 self.progress_callback(total_weighted_steps, total_weighted_steps)
 
-            self._log(f"[Slideshow] Slideshow complete: {output_path}")
+            self._log(f"Slideshow complete: {output_path}")
             
             # Display cache statistics
             # cache_stats = FFmpegCache.get_cache_stats()
@@ -897,7 +988,7 @@ class Slideshow:
             keep_intermediate = self.config.get("keep_intermediate_frames", False)
             
             if self.working_dir.exists() and not keep_intermediate:
-                self._log(f"[Slideshow] Cleaning working dir: {self.working_dir}")
+                self._log(f"Cleaning working dir: {self.working_dir}")
                 # Clean everything except ffmpeg_cache directory
                 try:
                     for item in self.working_dir.iterdir():
@@ -907,9 +998,9 @@ class Slideshow:
                             else:
                                 item.unlink(missing_ok=True)
                 except Exception as e:
-                    self._log(f"[Slideshow] WARNING: failed to clean working dir: {e}")
+                    self._log(f"WARNING: failed to clean working dir: {e}")
             # elif self.working_dir.exists():
-            #     self._log(f"[Slideshow] Preserving working dir (keep_intermediate_frames enabled)")
+            #     self._log(f"Preserving working dir (keep_intermediate_frames enabled)")
 
         except Exception:
             # On error, preserve working directory for debugging
