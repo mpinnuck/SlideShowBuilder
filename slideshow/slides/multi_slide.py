@@ -12,6 +12,7 @@ import os
 import tempfile
 import subprocess
 import shutil
+import uuid
 
 from slideshow.config import cfg
 from slideshow.slides.slide_item import SlideItem
@@ -512,6 +513,9 @@ class MultiSlide(SlideItem):
         first_file_stem = Path(self.media_files[0]).stem
         clip_path = working_dir / f"multi_{first_file_stem}_{param_hash}.mp4"
         self._rendered_clip = clip_path
+
+        # Unique suffix prevents temp-file name collisions across parallel renders.
+        render_uid = uuid.uuid4().hex[:8]
         
         # NEW APPROACH: Use FFmpeg to composite everything in ONE pass
         # This is 10-20x faster than Python PIL frame-by-frame compositing
@@ -532,7 +536,7 @@ class MultiSlide(SlideItem):
             input_paths = []
             for path in media_paths:
                 if path.suffix.lower() in ('.heic', '.heif'):
-                    temp_jpg = working_dir / f"temp_heic_{path.stem}_{param_hash}.jpg"
+                    temp_jpg = working_dir / f"temp_heic_{path.stem}_{param_hash}_{render_uid}.jpg"
                     temp_heic_files.append(temp_jpg)
                     with Image.open(path) as img:
                         img = ImageOps.exif_transpose(img)
@@ -618,13 +622,13 @@ class MultiSlide(SlideItem):
         try:
             for i, path in enumerate(media_paths):
                 # Create a temporary video clip from this source
-                temp_clip = working_dir / f"temp_source_{i}_{param_hash}.mp4"
+                temp_clip = working_dir / f"temp_source_{i}_{param_hash}_{render_uid}.mp4"
                 temp_clips.append(temp_clip)
                 
                 # Handle HEIC files - convert to temp JPEG first (faster than PNG)
                 input_path = path
                 if path.suffix.lower() in ('.heic', '.heif'):
-                    temp_jpg = working_dir / f"temp_heic_{i}_{param_hash}.jpg"
+                    temp_jpg = working_dir / f"temp_heic_{i}_{param_hash}_{render_uid}.jpg"
                     temp_heic_files.append(temp_jpg)
                     
                     # Convert HEIC to JPEG using PIL (faster than PNG)

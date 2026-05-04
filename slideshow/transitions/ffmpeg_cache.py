@@ -45,7 +45,9 @@ class FFmpegCache:
     _metadata: Dict[str, Any] = {}
     _enabled = True
     _initialized = False
-    _lock = threading.Lock()
+    _lock = threading.RLock()
+    _key_cache: Dict[str, str] = {}
+    _max_key_cache_entries = 2048
     
     @classmethod
     def configure(cls, cache_dir: Union[str, Path]):
@@ -68,6 +70,7 @@ class FFmpegCache:
                 cls._cache_dir = cache_dir
                 cls._initialized = False
                 cls._metadata = {}
+                cls._key_cache = {}
             
             try:
                 cls._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -142,8 +145,25 @@ class FFmpegCache:
                 json.dump(cls._metadata, f, indent=2)
     
     @classmethod
-    def _generate_cache_key(cls, input_path: Path, params: Dict[str, Any]) -> str:
-        """Generate a unique cache key based on input file and parameters."""
+    def _key_from_material(cls, cache_material: str) -> str:
+        """Generate a stable hashed key with memoization for repeated lookups."""
+        with cls._lock:
+            cached_key = cls._key_cache.get(cache_material)
+            if cached_key:
+                return cached_key
+
+        cache_key = hashlib.sha256(cache_material.encode()).hexdigest()[:16]
+
+        with cls._lock:
+            if len(cls._key_cache) >= cls._max_key_cache_entries:
+                cls._key_cache.clear()
+            cls._key_cache[cache_material] = cache_key
+
+        return cache_key
+
+    @classmethod
+    def _generate_cache_key_legacy(cls, input_path: Path, params: Dict[str, Any]) -> str:
+        """Legacy cache key format kept for compatibility with existing metadata/files."""
         # Use filename, size, and modification time for file identity
         # This ensures cache is invalidated if the file is modified or replaced
         try:
@@ -151,39 +171,62 @@ class FFmpegCache:
             size, mtime = st.st_size, st.st_mtime
         except OSError:
             size, mtime = 0, 0
+
         file_stats = {
             "name": input_path.name,
             "size": size,
             "mtime": mtime,
         }
-        
-        # Combine file stats with processing parameters
         cache_data = {
             "file": file_stats,
             "params": params
         }
-        
-        # Create hash from the combined data
         cache_str = json.dumps(cache_data, sort_keys=True)
-        return hashlib.sha256(cache_str.encode()).hexdigest()[:16]
+        return cls._key_from_material(f"legacy:{cache_str}")
+
+    @classmethod
+    def _generate_cache_key_v2(cls, input_path: Path, params: Dict[str, Any]) -> str:
+        """Current compact key format."""
+        try:
+            st = input_path.stat()
+            size, mtime = st.st_size, st.st_mtime
+        except OSError:
+            size, mtime = 0, 0
+
+        params_str = json.dumps(params, sort_keys=True, separators=(",", ":"), default=str)
+        cache_material = f"{input_path.name}|{size}|{mtime}|{params_str}"
+        return cls._key_from_material(f"v2:{cache_material}")
+
+    @classmethod
+    def _generate_cache_key(cls, input_path: Path, params: Dict[str, Any]) -> str:
+        """Primary key format for writes (legacy-preserving to avoid cache invalidation)."""
+        return cls._generate_cache_key_legacy(input_path, params)
     
     @classmethod
     def get_cached_clip(cls, input_path: Path, params: Dict[str, Any]) -> Optional[Path]:
         """Check if a cached clip exists for the given input and parameters."""
+        # Compute keys outside the metadata lock because stat() can be slow
+        # on external/network volumes.
+        primary_key = cls._generate_cache_key(input_path, params)
+        alt_key = cls._generate_cache_key_v2(input_path, params)
+
         with cls._lock:
             if not cls._enabled or not cls._cache_dir:
                 stats = cls._metadata.setdefault("stats", {})
                 stats["misses"] = stats.get("misses", 0) + 1
                 return None
-                
-            cache_key = cls._generate_cache_key(input_path, params)
-            
+
             # Check if entry exists in metadata
-            if cache_key not in cls._metadata.get("entries", {}):
+            entries = cls._metadata.get("entries", {})
+            if primary_key in entries:
+                cache_key = primary_key
+            elif alt_key in entries:
+                cache_key = alt_key
+            else:
                 stats = cls._metadata.setdefault("stats", {})
                 stats["misses"] = stats.get("misses", 0) + 1
                 return None
-                
+
             # Check if cached file actually exists
             cached_file = cls._cache_dir / "clips" / f"{cache_key}.mp4"
             if not cached_file.exists():
@@ -243,20 +286,28 @@ class FFmpegCache:
     @classmethod
     def get_cached_frame(cls, input_path: Path, params: Dict[str, Any]) -> Optional[Path]:
         """Check if a cached frame exists for the given input and parameters."""
+        # Compute keys outside the metadata lock because stat() can be slow
+        # on external/network volumes.
+        primary_key = cls._generate_cache_key(input_path, params)
+        alt_key = cls._generate_cache_key_v2(input_path, params)
+
         with cls._lock:
             if not cls._enabled or not cls._cache_dir:
                 stats = cls._metadata.setdefault("stats", {})
                 stats["misses"] = stats.get("misses", 0) + 1
                 return None
-                
-            cache_key = cls._generate_cache_key(input_path, params)
-            
+
             # Check if entry exists in metadata
-            if cache_key not in cls._metadata.get("entries", {}):
+            entries = cls._metadata.get("entries", {})
+            if primary_key in entries:
+                cache_key = primary_key
+            elif alt_key in entries:
+                cache_key = alt_key
+            else:
                 stats = cls._metadata.setdefault("stats", {})
                 stats["misses"] = stats.get("misses", 0) + 1
                 return None
-                
+
             # Check if cached file actually exists
             cached_file = cls._cache_dir / "frames" / f"{cache_key}.png"
             if not cached_file.exists():

@@ -1551,7 +1551,7 @@ class GUI(tk.Tk):
                 
                 # Process pending events
                 loading_dialog.update()
-            except:
+            except Exception:
                 break  # Dialog was destroyed
             
             # Wait 50ms before next check
@@ -1560,7 +1560,7 @@ class GUI(tk.Tk):
         # Thread finished - cleanup
         try:
             loading_dialog.destroy()
-        except:
+        except Exception:
             pass
         
         if result_container['error']:

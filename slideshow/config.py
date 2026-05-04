@@ -32,6 +32,7 @@ class Config:
     APP_SETTINGS_DIR = Path.home() / "SlideShowBuilder"
     APP_SETTINGS_FILE = APP_SETTINGS_DIR / "slideshow_settings.json"
     PROJECT_CONFIG_FILE = "slideshow_config.json"
+    MAX_CONFIG_BYTES = 5 * 1024 * 1024
     
     # Default app-level settings
     DEFAULT_APP_SETTINGS = {
@@ -360,10 +361,15 @@ class Config:
             # Try to load from last project
             app_settings = self.load_app_settings()
             last_project = app_settings.get("last_project_path", "")
-            config_path = Path(last_project) if last_project else Path(self.PROJECT_CONFIG_FILE)
+            config_path = self._resolve_startup_config_path(last_project, app_settings)
         
         if config_path.exists():
             try:
+                if config_path.stat().st_size > self.MAX_CONFIG_BYTES:
+                    raise OSError(
+                        f"Config file too large ({config_path.stat().st_size} bytes, "
+                        f"max {self.MAX_CONFIG_BYTES} bytes)"
+                    )
                 with open(config_path, "r") as f:
                     user_config = json.load(f)
                     if isinstance(user_config, dict):
@@ -383,6 +389,52 @@ class Config:
         
         self.set(config)
         return config
+
+    def _normalize_config_path(self, candidate_path: str) -> Path:
+        """Normalize a stored project path to a slideshow_config.json path."""
+        path = Path(candidate_path).expanduser()
+
+        # Already a config file path.
+        if path.name == self.PROJECT_CONFIG_FILE:
+            return path
+
+        # Handle saved output-folder paths (.../Project/Output).
+        if path.is_dir() and path.name.lower() == "output":
+            return path.parent / self.PROJECT_CONFIG_FILE
+
+        # Handle saved project-folder paths (.../Project).
+        return path / self.PROJECT_CONFIG_FILE
+
+    def _resolve_startup_config_path(self, last_project_path: str, app_settings: dict) -> Path:
+        """Resolve config path at startup, preferring last project then history entries."""
+        if last_project_path:
+            normalized = self._normalize_config_path(last_project_path)
+            if normalized.exists():
+                return normalized
+
+        history = app_settings.get("project_history", [])
+        if isinstance(history, list):
+            for entry in history:
+                if not isinstance(entry, dict):
+                    continue
+
+                project_path = entry.get("path", "")
+                project_name = entry.get("name", "")
+
+                if project_path:
+                    candidate = self._normalize_config_path(project_path)
+                elif project_name:
+                    candidate = self.APP_SETTINGS_DIR / project_name / self.PROJECT_CONFIG_FILE
+                else:
+                    continue
+
+                if candidate.exists():
+                    # Heal last_project_path for future launches.
+                    app_settings["last_project_path"] = str(candidate)
+                    self.save_app_settings(app_settings)
+                    return candidate
+
+        return Path(self.PROJECT_CONFIG_FILE)
     
     def save(self, output_folder: str):
         """

@@ -50,6 +50,7 @@ class PhotoSlide(SlideItem):
         if cached_clip:
             if log_callback:
                 log_callback(f"[FFmpegCache] Using cached photo clip: {cached_clip.name}")
+            logger_func = log_callback or print
             
             # Hard-link cached clip to working directory (zero-copy, same filesystem)
             try:
@@ -57,12 +58,12 @@ class PhotoSlide(SlideItem):
                 os.link(cached_clip, clip_path)
             except OSError as e:
                 # Hard link failed, fall back to copy
-                print(f"[PhotoSlide] Hard link failed for {self.path.name}, copying instead: {e}")
+                ErrorHandler.log_warning(logger_func, "Hard-link cached photo clip", e, context=self.path.name)
                 import shutil
                 try:
                     shutil.copy2(cached_clip, clip_path)
                 except OSError as copy_error:
-                    ErrorHandler.log_error(print, f"File copy operation for {self.path.name}", copy_error)
+                    ErrorHandler.log_error(logger_func, "File copy operation", copy_error, context=self.path.name)
                     raise
             return clip_path
 
@@ -156,23 +157,21 @@ class PhotoSlide(SlideItem):
             True if successful, False otherwise
         """
         try:
-            # Load the current image from disk
-            img = Image.open(self.path)
-            
-            # Preserve EXIF data before any operations
-            exif_data = img.info.get('exif', b'')
-            
-            # Apply EXIF orientation first to get the correct base orientation
-            img = ImageOps.exif_transpose(img)
-            
-            # Rotate the image (PIL rotates counter-clockwise with positive angles)
-            img_rotated = img.rotate(degrees, expand=True)
-            
-            # Save back to the same file, preserving EXIF data
-            if exif_data:
-                img_rotated.save(self.path, exif=exif_data)
-            else:
-                img_rotated.save(self.path)
+            with Image.open(self.path) as img:
+                exif = img.getexif()
+
+                # Apply EXIF orientation first to get the correct base orientation.
+                normalized = ImageOps.exif_transpose(img)
+
+                # Rotate the image (PIL rotates counter-clockwise with positive angles).
+                img_rotated = normalized.rotate(degrees, expand=True)
+
+                # Reset orientation tag now that pixel data is physically rotated.
+                if exif:
+                    exif[274] = 1
+                    img_rotated.save(self.path, exif=exif.tobytes())
+                else:
+                    img_rotated.save(self.path)
             
             # Invalidate cached images since the source file changed
             self._to_image = None

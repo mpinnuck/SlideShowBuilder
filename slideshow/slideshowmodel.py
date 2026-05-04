@@ -118,8 +118,15 @@ class Slideshow:
         # Create a unique cache file based on input folder and sort settings
         input_folder = self.config.get("input_folder", "")
         sort_key = f"{input_folder}_{self.config.get('sort_by_filename', False)}_{self.config.get('recurse_folders', False)}_{self.config.get('older_images_no_exif', False)}"
-        cache_hash = hashlib.md5(sort_key.encode()).hexdigest()[:12]
+        cache_hash = hashlib.sha256(sort_key.encode()).hexdigest()[:12]
         return self.working_dir / "ffmpeg_cache" / f"slide_order_{cache_hash}.json"
+
+    def _get_legacy_slide_cache_path(self) -> Path:
+        """Get the legacy slide cache path (MD5-based) for backward compatibility."""
+        input_folder = self.config.get("input_folder", "")
+        sort_key = f"{input_folder}_{self.config.get('sort_by_filename', False)}_{self.config.get('recurse_folders', False)}_{self.config.get('older_images_no_exif', False)}"
+        legacy_hash = hashlib.md5(sort_key.encode()).hexdigest()[:12]
+        return self.working_dir / "ffmpeg_cache" / f"slide_order_{legacy_hash}.json"
     
     def _save_slide_cache(self):
         """Save slide paths to cache for faster loading next time."""
@@ -182,9 +189,13 @@ class Slideshow:
         """Try to load slides from cache. Returns True if successful."""
         try:
             cache_path = self._get_slide_cache_path()
-            
+
             if not cache_path.exists():
-                return False
+                legacy_cache_path = self._get_legacy_slide_cache_path()
+                if legacy_cache_path.exists():
+                    cache_path = legacy_cache_path
+                else:
+                    return False
             
             with open(cache_path, 'r') as f:
                 slide_data = json.load(f)
@@ -286,56 +297,6 @@ class Slideshow:
     # -------------------------------
     # FFprobe utilities
     # -------------------------------
-    def _extract_video_metadata_parallel(self, video_files: List[Path], files_processed: List[int], total_files: int) -> dict:
-        """Extract creation time metadata from video files in parallel using ffprobe."""
-        def extract_single_video_metadata(video_path: Path) -> tuple[Path, Optional[float]]:
-            """Extract metadata from a single video file."""
-            try:
-                result = subprocess.run([
-                    'ffprobe', '-v', 'quiet', '-print_format', 'json',
-                    '-show_format', str(video_path)
-                ], capture_output=True, text=True, timeout=10)
-                
-                if result.returncode == 0:
-                    metadata = json.loads(result.stdout)
-                    creation_time = metadata.get('format', {}).get('tags', {}).get('creation_time')
-                    if creation_time:
-                        # Handle various ISO 8601 formats
-                        for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
-                            try:
-                                dt = datetime.datetime.strptime(creation_time.replace('+00:00', 'Z'), fmt)
-                                return video_path, dt.timestamp()
-                            except ValueError:
-                                continue
-                return video_path, None
-            except Exception:
-                return video_path, None
-        
-        video_metadata = {}
-        if not video_files:
-            return video_metadata
-        
-        # Process videos in parallel with limited concurrency to avoid overwhelming the system
-        max_workers = min(4, len(video_files))  # Limit to 4 concurrent ffprobe processes
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all video metadata extraction tasks
-            future_to_path = {executor.submit(extract_single_video_metadata, path): path for path in video_files}
-            
-            # Collect results as they complete
-            for future in as_completed(future_to_path):
-                path, timestamp = future.result()
-                if timestamp is not None:
-                    video_metadata[path] = timestamp
-                
-                # Update progress
-                files_processed[0] += 1
-                if files_processed[0] % 10 == 0 or files_processed[0] == total_files:
-                    if self.progress_callback:
-                        self.progress_callback(files_processed[0], total_files, f"Reading dates {files_processed[0]}/{total_files}...")
-                    self._log(f"Reading dates {files_processed[0]}/{total_files}...\r")
-        
-        return video_metadata
-
     def _extract_video_metadata_parallel(self, video_files: List[Path], files_processed: List[int], total_files: int) -> dict:
         """Extract creation time metadata from video files in parallel using ffprobe."""
         def extract_single_video_metadata(video_path: Path) -> tuple[Path, Optional[float]]:
@@ -599,12 +560,7 @@ class Slideshow:
             ext = path.suffix.lower()
             
             # Get timestamp for this file from cache
-            timestamp = timestamp_cache.get(path)
-            if timestamp is None:
-                try:
-                    timestamp = path.stat().st_mtime
-                except OSError:
-                    timestamp = 0.0
+            timestamp = timestamp_cache.get(path, 0.0)
             
             # Check if we should create a multislide at this position
             # Trigger: Every 5 slides (e.g., at indices 5, 10, 15, ...)
@@ -794,43 +750,47 @@ class Slideshow:
 
             def _render_slide(slide):
                 try:
+                    # Keep UI logging concise: per-slide internals are too noisy for normal export.
                     slide.render(self.working_dir)
                     return slide
                 except Exception as e:
                     # Include slide information in error for debugging
                     raise RuntimeError(f"Failed to render slide {slide.path.name}: {str(e)}") from e
 
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            cancelled_during_slide_render = False
+            executor = ThreadPoolExecutor(max_workers=max_workers)
+            try:
                 futures = {executor.submit(_render_slide, s): s for s in self.slides}
-                
+
                 for future in as_completed(futures):
                     if self.cancel_check and self.cancel_check():
-                        executor.shutdown(wait=False, cancel_futures=True)
+                        cancelled_during_slide_render = True
                         self._log("Cancelling export...")
-                        raise RuntimeError("Export cancelled by user")
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
                     try:
                         slide = futures[future]
                         future.result()  # re-raise any exception
-                    except Exception as e:
-                        # Get the slide that failed from the futures mapping
+                    except Exception:
                         failed_slide = futures[future]
                         self._log(f"Failed rendering slide: {failed_slide.path.name}")
                         raise
                     completed += 1
-                    print(f"\rRendering slides ({completed}/{total_items})...", end="", flush=True)
                     if self.progress_callback:
-                        if completed % 10 == 0 or completed == total_items:
-                            self.progress_callback(
-                                completed,
-                                total_weighted_steps,
-                                f"Rendering {completed}/{total_items} slides..."
-                            )
-                        else:
-                            self.progress_callback(completed, total_weighted_steps)
-                    
-                    # Log final completion to app window
-                    if completed == total_items:
-                        self._log(f"Rendered {completed} slides successfully")
+                        self.progress_callback(
+                            completed,
+                            total_weighted_steps,
+                            f"Rendering {completed}/{total_items} slides..."
+                        )
+
+                if completed == total_items:
+                    self._log(f"Rendered {completed} slides successfully")
+            finally:
+                if not cancelled_during_slide_render:
+                    executor.shutdown(wait=True)
+
+            if cancelled_during_slide_render:
+                raise RuntimeError("Export cancelled by user")
 
             # --- Render intro title if enabled ---
             intro = IntroTitle()
@@ -869,19 +829,29 @@ class Slideshow:
                 self.transition.render(i, self.slides, trans_out)
                 return i, trans_out
 
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            cancelled_during_transition_render = False
+            executor = ThreadPoolExecutor(max_workers=max_workers)
+            try:
                 futures = {executor.submit(_render_transition, i): i for i in range(total_items - 1)}
+
                 for future in as_completed(futures):
                     if self.cancel_check and self.cancel_check():
-                        executor.shutdown(wait=False, cancel_futures=True)
+                        cancelled_during_transition_render = True
                         self._log("Cancelling export...")
-                        raise RuntimeError("Export cancelled by user")
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
                     idx, trans_out = future.result()
                     transition_clips[idx] = trans_out
                     completed_trans += 1
                     self._log(f"Rendering transitions ({completed_trans}/{total_transitions})...\r")
                     if self.progress_callback:
                         self.progress_callback(total_items + completed_trans, total_weighted_steps)
+            finally:
+                if not cancelled_during_transition_render:
+                    executor.shutdown(wait=True)
+
+            if cancelled_during_transition_render:
+                raise RuntimeError("Export cancelled by user")
 
             # --- Write concat file ---
             # Check for cancellation before assembly

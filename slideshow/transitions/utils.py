@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 from slideshow.config import cfg
+from slideshow.error_handling import ErrorHandler
 from slideshow.transitions.ffmpeg_cache import FFmpegCache
 from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 
@@ -40,8 +41,9 @@ def get_video_duration(video_path):
     duration_str = result.stdout.strip()
     return float(duration_str)
 
-def extract_frame(video_path, last=False):
+def extract_frame(video_path, last=False, log_callback=None):
     """Extract the first or last frame of a video to a PIL.Image (robust)."""
+    logger_func = log_callback or print
     
     # Create cache key parameters
     cache_params = {
@@ -82,8 +84,8 @@ def extract_frame(video_path, last=False):
                 result = subprocess.run(cmd, capture_output=True, timeout=30)
 
             ffmpeg_ok = result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0
-        except subprocess.TimeoutExpired:
-            pass
+        except subprocess.TimeoutExpired as e:
+            ErrorHandler.log_warning(logger_func, "Frame extraction via FFmpeg", e, context=str(video_path))
 
         if not ffmpeg_ok:
             # Fallback: try OpenCV (handles some codecs FFmpeg CLI can't seek into)
@@ -105,7 +107,12 @@ def extract_frame(video_path, last=False):
                 cap.release()
 
             # Ultimate fallback: return a black frame
-            print(f"[extract_frame] Warning: Could not extract frame from {video_path}, using black frame")
+            ErrorHandler.log_warning(
+                logger_func,
+                "Frame extraction fallback",
+                RuntimeError("All extraction strategies failed"),
+                context=str(video_path),
+            )
             return Image.new("RGB", (1920, 1080), (0, 0, 0))
 
         # Store extracted frame in cache before returning
