@@ -152,14 +152,11 @@ class FFmpegCache:
             if cached_key:
                 return cached_key
 
-        cache_key = hashlib.sha256(cache_material.encode()).hexdigest()[:16]
-
-        with cls._lock:
+            cache_key = hashlib.sha256(cache_material.encode()).hexdigest()[:16]
             if len(cls._key_cache) >= cls._max_key_cache_entries:
                 cls._key_cache.clear()
             cls._key_cache[cache_material] = cache_key
-
-        return cache_key
+            return cache_key
 
     @classmethod
     def _generate_cache_key_legacy(cls, input_path: Path, params: Dict[str, Any]) -> str:

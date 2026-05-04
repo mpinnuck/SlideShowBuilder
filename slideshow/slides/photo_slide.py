@@ -15,6 +15,9 @@ from slideshow.transitions.ffmpeg_paths import FFmpegPaths
 from slideshow.error_handling import ErrorHandler
 
 
+_EXIF_ORIENTATION_TAG = 274
+
+
 class PhotoSlide(SlideItem):
     def __init__(self, path: Path, duration: float, fps: int = None, resolution: tuple = None, creation_date: float = None):
         resolution = resolution if resolution is not None else tuple(DEFAULT_CONFIG["resolution"])
@@ -168,7 +171,7 @@ class PhotoSlide(SlideItem):
 
                 # Reset orientation tag now that pixel data is physically rotated.
                 if exif:
-                    exif[274] = 1
+                    exif[_EXIF_ORIENTATION_TAG] = 1
                     img_rotated.save(self.path, exif=exif.tobytes())
                 else:
                     img_rotated.save(self.path)

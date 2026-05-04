@@ -365,9 +365,10 @@ class Config:
         
         if config_path.exists():
             try:
-                if config_path.stat().st_size > self.MAX_CONFIG_BYTES:
+                size = config_path.stat().st_size
+                if size > self.MAX_CONFIG_BYTES:
                     raise OSError(
-                        f"Config file too large ({config_path.stat().st_size} bytes, "
+                        f"Config file too large ({size} bytes, "
                         f"max {self.MAX_CONFIG_BYTES} bytes)"
                     )
                 with open(config_path, "r") as f:

@@ -758,6 +758,7 @@ class Slideshow:
                     raise RuntimeError(f"Failed to render slide {slide.path.name}: {str(e)}") from e
 
             cancelled_during_slide_render = False
+            failed_during_slide_render = False
             executor = ThreadPoolExecutor(max_workers=max_workers)
             try:
                 futures = {executor.submit(_render_slide, s): s for s in self.slides}
@@ -772,6 +773,7 @@ class Slideshow:
                         slide = futures[future]
                         future.result()  # re-raise any exception
                     except Exception:
+                        failed_during_slide_render = True
                         failed_slide = futures[future]
                         self._log(f"Failed rendering slide: {failed_slide.path.name}")
                         raise
@@ -786,7 +788,9 @@ class Slideshow:
                 if completed == total_items:
                     self._log(f"Rendered {completed} slides successfully")
             finally:
-                if not cancelled_during_slide_render:
+                if cancelled_during_slide_render or failed_during_slide_render:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                else:
                     executor.shutdown(wait=True)
 
             if cancelled_during_slide_render:
@@ -830,6 +834,7 @@ class Slideshow:
                 return i, trans_out
 
             cancelled_during_transition_render = False
+            failed_during_transition_render = False
             executor = ThreadPoolExecutor(max_workers=max_workers)
             try:
                 futures = {executor.submit(_render_transition, i): i for i in range(total_items - 1)}
@@ -840,14 +845,22 @@ class Slideshow:
                         self._log("Cancelling export...")
                         executor.shutdown(wait=False, cancel_futures=True)
                         break
-                    idx, trans_out = future.result()
+                    try:
+                        idx, trans_out = future.result()
+                    except Exception:
+                        failed_during_transition_render = True
+                        failed_idx = futures[future]
+                        self._log(f"Failed rendering transition: {failed_idx}")
+                        raise
                     transition_clips[idx] = trans_out
                     completed_trans += 1
                     self._log(f"Rendering transitions ({completed_trans}/{total_transitions})...\r")
                     if self.progress_callback:
                         self.progress_callback(total_items + completed_trans, total_weighted_steps)
             finally:
-                if not cancelled_during_transition_render:
+                if cancelled_during_transition_render or failed_during_transition_render:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                else:
                     executor.shutdown(wait=True)
 
             if cancelled_during_transition_render:
