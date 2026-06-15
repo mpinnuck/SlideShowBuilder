@@ -7,6 +7,7 @@ Searches common installation locations once and returns cached paths.
 
 import subprocess
 import os
+import shutil
 from typing import Optional
 
 
@@ -56,18 +57,17 @@ class FFmpegPaths:
 
     @staticmethod
     def _test_executable(path: str) -> bool:
-        """Test whether a path points to a working executable."""
-        try:
-            subprocess.run(
-                [path, "-version"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
-                timeout=2
-            )
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            return False
+        """Test whether a path points to a working executable.
+        
+        For absolute paths, checks existence and execute permission directly
+        (avoids DYLD_LIBRARY_PATH issues in PyInstaller-packaged apps).
+        For bare names, uses shutil.which() to resolve via PATH.
+        """
+        if os.sep in path or path.startswith('/'):
+            # Absolute or relative path: check it exists and is executable
+            return os.path.isfile(path) and os.access(path, os.X_OK)
+        # Bare name (e.g. 'ffmpeg'): check if it resolves in PATH
+        return shutil.which(path) is not None
     
     def _initialize(self):
         """Initialize paths by searching for executables."""
